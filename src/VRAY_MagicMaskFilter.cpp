@@ -25,7 +25,7 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
     : mySamplesPerPixelX(1) // Initialized just in case; value shouldn't be used
     , mySamplesPerPixelY(1) // Initialized just in case; value shouldn't be used
     , mySortByOpacity(false)
-    , mySortByPz(false)
+    , mySortByPz(true)
     , myUseOpID(false)
     , myMaskNumber(4)
 {
@@ -123,14 +123,29 @@ VRAY_MagicMaskFilter::filter(
     // The gradient computations can be made much faster by separating x and y,
     // using a temporary buffer, but this is implemented the slow way.
     // In fact, nothing in here is optimized.
+    int lwidth  = mySamplesPerPixelY * sourcewidth * vectorsize;
+    int swidth  = mySamplesPerPixelX * vectorsize;
+    int reoffx  = destxoffsetinsource / mySamplesPerPixelX;
+    int reoffy  = destyoffsetinsource / mySamplesPerPixelY;
 
+    //const int pack = mySamplesPerPixelX * mySamplesPerPixelY * vectorsize;
+    // const int sample = mySamplesPerPixelY*mySamplesPerPixelX;
     for (int desty = 0; desty < destheight; ++desty)
     {
         for (int destx = 0; destx < destwidth; ++destx)
         {
-            float value = .12345;
-            for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = value;
+
+            const int dxf = destx + reoffx;
+            const int dyf = desty + reoffy;
+            const int sx  = dyf * lwidth + dxf * swidth;
+
+            // float value = 0;
+            // for( int s=0; s<mySamplesPerPixelX; ++s)
+            //     value += zdata[sx+s];
+            // value /= (mySamplesPerPixelX);
+
+            // for (int i = 0; i < vectorsize; ++i, ++destination)
+            //     *destination = SYSmin(value, 100.0f);
         }
     }
 }
