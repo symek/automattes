@@ -9,6 +9,7 @@
 #include <UT/UT_StackBuffer.h>
 #include <SYS/SYS_Floor.h>
 #include <SYS/SYS_Math.h>
+#include <iostream>
 
 using namespace HA_MMask;
 
@@ -120,16 +121,12 @@ VRAY_MagicMaskFilter::filter(
     UT_ASSERT(mySortByPz == (zdata != NULL));
     UT_ASSERT(myUseOpID == (opiddata != NULL));
 
-    // The gradient computations can be made much faster by separating x and y,
-    // using a temporary buffer, but this is implemented the slow way.
-    // In fact, nothing in here is optimized.
-    int lwidth  = mySamplesPerPixelY * sourcewidth * vectorsize;
-    int swidth  = mySamplesPerPixelX * vectorsize;
-    int reoffx  = destxoffsetinsource / mySamplesPerPixelX;
-    int reoffy  = destyoffsetinsource / mySamplesPerPixelY;
+   
+    const int lwidth  = mySamplesPerPixelY * sourcewidth * vectorsize;
+    const int swidth  = mySamplesPerPixelX * vectorsize;
+    const int reoffx  = destxoffsetinsource / mySamplesPerPixelX;
+    const int reoffy  = destyoffsetinsource / mySamplesPerPixelY;
 
-    //const int pack = mySamplesPerPixelX * mySamplesPerPixelY * vectorsize;
-    // const int sample = mySamplesPerPixelY*mySamplesPerPixelX;
     for (int desty = 0; desty < destheight; ++desty)
     {
         for (int destx = 0; destx < destwidth; ++destx)
@@ -137,15 +134,24 @@ VRAY_MagicMaskFilter::filter(
 
             const int dxf = destx + reoffx;
             const int dyf = desty + reoffy;
-            const int sx  = dyf * lwidth + dxf * swidth;
+                  int sx  = dyf * lwidth + dxf * swidth;
 
-            // float value = 0;
-            // for( int s=0; s<mySamplesPerPixelX; ++s)
-            //     value += zdata[sx+s];
-            // value /= (mySamplesPerPixelX);
+          
+            float value = 0;
+            for (int y=0; y<mySamplesPerPixelY; ++y) {
+                sx += y*sourcewidth*vectorsize;
+                for( int x=0; x<mySamplesPerPixelX; ++x) {
+                    value += zdata[sx+x];
+                }
+            }
 
-            // for (int i = 0; i < vectorsize; ++i, ++destination)
-            //     *destination = SYSmin(value, 100.0f);
+            value /= (mySamplesPerPixelX*mySamplesPerPixelY);
+
+            if (value > 1000)
+                value = 0.0;
+
+            for (int i = 0; i < vectorsize; ++i, ++destination)
+                *destination = value; //SYSmin(value, 100.0f);
         }
     }
 }
