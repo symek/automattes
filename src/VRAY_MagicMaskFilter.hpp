@@ -79,6 +79,15 @@ private:
 
     /// How many object we will store.
     int myMaskNumber;
+
+    /// Filter width (default 2)
+    float myFilterWidth;
+
+    float myOpacitySumX2;
+    float myOpacitySumY2;
+
+    int myOpacitySamplesHalfX;
+    int myOpacitySamplesHalfY;
 };
 
 } // End HA_MMask namespace

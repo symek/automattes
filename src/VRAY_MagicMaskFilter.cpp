@@ -23,12 +23,13 @@ allocPixelFilter(const char *name)
 
 
 VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
-    : mySamplesPerPixelX(1) // Initialized just in case; value shouldn't be used
-    , mySamplesPerPixelY(1) // Initialized just in case; value shouldn't be used
+    : mySamplesPerPixelX(1) 
+    , mySamplesPerPixelY(1) 
     , mySortByOpacity(false)
     , mySortByPz(true)
     , myUseOpID(false)
     , myMaskNumber(4)
+    , myFilterWidth(2)
 {
 }
 
@@ -50,7 +51,7 @@ VRAY_MagicMaskFilter::setArgs(int argc, const char *const argv[])
 {
     UT_Args args;
     args.initialize(argc, argv);
-    args.stripOptions("i:z:o:n:");
+    args.stripOptions("i:z:o:n:w:");
 
     if (args.found('i')) {
         myUseOpID = true;
@@ -61,15 +62,20 @@ VRAY_MagicMaskFilter::setArgs(int argc, const char *const argv[])
     if (args.found('o')) {
         mySortByOpacity = true;
     }
-      if (args.found('n')) {
+    if (args.found('n')) {
        myMaskNumber =  args.iargp('n');
-    }      
+    }
+    if (args.found('w')) {
+        myFilterWidth = args.fargp('w');
+    }
+
+
 }
 
 void
 VRAY_MagicMaskFilter::getFilterWidth(float &x, float &y) const
 {
-    float filterwidth = 1.0f;
+    float filterwidth = myFilterWidth;
     x = filterwidth;
     y = filterwidth;
 }
@@ -85,13 +91,36 @@ VRAY_MagicMaskFilter::addNeededSpecialChannels(VRAY_Imager &imager)
     addSpecialChannel(imager, VRAY_SPECIAL_OPACITYSAMPLES);
 }
 
+namespace {
+float VRAYcomputeSumX2(int samplesperpixel, float width, int &halfsamplewidth)
+{
+    float sumx2 = 0;
+    if (samplesperpixel & 1 ) {
+        halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width);
+        for (int i = -halfsamplewidth; i <= halfsamplewidth; ++i) {
+            float x = float(i)/float(samplesperpixel);
+            sumx2 += x*x;
+        }
+    } else {
+        halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width + 0.5f);
+        for (int i = -halfsamplewidth; i < halfsamplewidth; ++i) {
+            float x = (float(i)+0.5f)/float(samplesperpixel);
+            sumx2 += x*x;
+        }
+    }
+    return sumx2;
+}
 
+}
 
 void
 VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
 {
     mySamplesPerPixelX = samplesperpixelx;
     mySamplesPerPixelY = samplesperpixely;
+
+    myOpacitySumX2 = VRAYcomputeSumX2(mySamplesPerPixelX, myFilterWidth, myOpacitySamplesHalfX);
+    myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
 }
 
 void
@@ -108,6 +137,7 @@ VRAY_MagicMaskFilter::filter(
     int destyoffsetinsource,
     const VRAY_Imager &imager) const
 {
+
     const float *const opacitydata = \
     getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPACITYSAMPLES));
     const float *const zdata = mySortByPz
@@ -117,41 +147,69 @@ VRAY_MagicMaskFilter::filter(
         ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID))
         : NULL;
 
+     const float *const colourdata = getSampleData(source, VRAY_SPECIAL_CFAF);
+
     UT_ASSERT(opacitydata != NULL);
     UT_ASSERT(mySortByPz == (zdata != NULL));
     UT_ASSERT(myUseOpID == (opiddata != NULL));
-
-   
-    const int lwidth  = mySamplesPerPixelY * sourcewidth * vectorsize;
-    const int swidth  = mySamplesPerPixelX * vectorsize;
-    const int reoffx  = destxoffsetinsource / mySamplesPerPixelX;
-    const int reoffy  = destyoffsetinsource / mySamplesPerPixelY;
 
     for (int desty = 0; desty < destheight; ++desty)
     {
         for (int destx = 0; destx < destwidth; ++destx)
         {
 
-            const int dxf = destx + reoffx;
-            const int dyf = desty + reoffy;
-                  int sx  = dyf * lwidth + dxf * swidth;
+            // I am giving up my own attempts and copy/paste from HDK example...
+            // First, compute the sample bounds of the pixel
+            const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
+            const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
+            const int sourcelastx = sourcefirstx + mySamplesPerPixelX-1;
+            const int sourcelasty = sourcefirsty + mySamplesPerPixelY-1;
+            // Find the first sample to read for opacity and Pz
+            const int sourcefirstox = sourcefirstx + (mySamplesPerPixelX>>1) - myOpacitySamplesHalfX;
+            const int sourcefirstoy = sourcefirsty + (mySamplesPerPixelY>>1) - myOpacitySamplesHalfY;
+            // // Find the last sample to read for colour and z gradients
+            const int sourcelastox = sourcefirstx + ((mySamplesPerPixelX-1)>>1) + myOpacitySamplesHalfX;
+            const int sourcelastoy = sourcefirsty + ((mySamplesPerPixelY-1)>>1) + myOpacitySamplesHalfY;
+            int sourcefirstrx = sourcefirstx;
+            int sourcefirstry = sourcefirsty;
+            int sourcelastrx = sourcelastx;
+            int sourcelastry = sourcelasty;
+            // sourcefirstrx = SYSmin(sourcefirstrx, sourcefirstox);
+            // sourcefirstry = SYSmin(sourcefirstry, sourcefirstoy);
+            // sourcelastrx  = SYSmax(sourcelastrx, sourcelastox);
+            // sourcelastry  = SYSmax(sourcelastry, sourcelastoy);
+            
+           
+            UT_StackBuffer<float> opacitySample(vectorsize);
+            for (int i = 0; i < vectorsize; ++i)
+                opacitySample[i] = 0;
 
-          
-            float value = 0;
-            for (int y=0; y<mySamplesPerPixelY; ++y) {
-                sx += y*sourcewidth*vectorsize;
-                for( int x=0; x<mySamplesPerPixelX; ++x) {
-                    value += zdata[sx+x];
+            int counter=0;
+            for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
+            {
+                for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
+                {
+                     if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
+                      sourcey >= sourcefirstoy && sourcey <= sourcelastoy)
+                    {
+
+                        // Find (x,y) of sample relative to *middle* of pixel
+                        // float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
+                        // float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
+                        const int sourcei = sourcex + sourcewidth*sourcey;
+                        for (int i = 0; i < vectorsize; ++i) {
+                            opacitySample[i] = opacitydata[vectorsize*sourcei+i];
+                        }
+                        counter++;
+                    }
                 }
             }
 
-            value /= (mySamplesPerPixelX*mySamplesPerPixelY);
-
-            if (value > 1000)
-                value = 0.0;
+            for (int i = 0; i < vectorsize; ++i)
+                opacitySample[i] /= counter;
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = value; //SYSmin(value, 100.0f);
+                *destination = opacitySample[i];
         }
     }
 }
