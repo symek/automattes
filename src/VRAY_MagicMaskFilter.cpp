@@ -10,6 +10,7 @@
 #include <SYS/SYS_Floor.h>
 #include <SYS/SYS_Math.h>
 #include <iostream>
+#include <map>
 
 using namespace HA_MMask;
 
@@ -27,7 +28,7 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
     , mySamplesPerPixelY(1) 
     , mySortByOpacity(false)
     , mySortByPz(true)
-    , myUseOpID(false)
+    , myUseOpID(true)
     , myMaskNumber(4)
     , myFilterWidth(2)
 {
@@ -121,6 +122,9 @@ VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
 
     myOpacitySumX2 = VRAYcomputeSumX2(mySamplesPerPixelX, myFilterWidth, myOpacitySamplesHalfX);
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
+
+    // std::cout << "myOpacitySamplesHalf: " << myOpacitySamplesHalfX  <<", " << myOpacitySamplesHalfY << std::endl; 
+    // std::cout << "myOpacitySum*2: " << myOpacitySumX2  <<", " << myOpacitySumY2 << std::endl; 
 }
 
 void
@@ -143,16 +147,19 @@ VRAY_MagicMaskFilter::filter(
     const float *const zdata = mySortByPz
         ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ))
         : NULL;
+
     const float *const opiddata = myUseOpID
         ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID))
         : NULL;
 
-     const float *const colourdata = getSampleData(source, VRAY_SPECIAL_CFAF);
+    const float *const colourdata = \
+    getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_CFAF));
 
     UT_ASSERT(opacitydata != NULL);
     UT_ASSERT(mySortByPz == (zdata != NULL));
     UT_ASSERT(myUseOpID == (opiddata != NULL));
 
+    // const float normalizer = 1.0f/mySamplesPerPixelX*mySamplesPerPixelY;
     for (int desty = 0; desty < destheight; ++desty)
     {
         for (int destx = 0; destx < destwidth; ++destx)
@@ -180,40 +187,66 @@ VRAY_MagicMaskFilter::filter(
             // sourcelastry  = SYSmax(sourcelastry, sourcelastoy);
             
            
-            UT_StackBuffer<float> opacitySample(vectorsize);
+            UT_StackBuffer<float> sample(vectorsize);
             for (int i = 0; i < vectorsize; ++i)
-                opacitySample[i] = 0;
+                sample[i] = 0;
 
-            int counter=1;
+            std::map<int, float> alphaMap;
+            std::map<int, float> counterMap;
+
+            int counter=0;
             float value = 0;
+            // float x, y, l;
+            // std::cout << "Pixel: " << destx << "," << desty << " x,y: ";
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
                 {
+                    const int sourcei = sourcex + sourcewidth*sourcey;
                     if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
                       sourcey >= sourcefirstoy && sourcey <= sourcelastoy) 
                     {
 
                         // Find (x,y) of sample relative to *middle* of pixel
-                        // float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
-                        // float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
-                        const int sourcei = sourcex + sourcewidth*sourcey;
+                        const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
+                        const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
+                        const float l = SYSsqrt(x*x+y*y);// * myFilterWidth;
                         for (int i = 0; i < vectorsize; ++i) {
-                            opacitySample[i] = colourdata[vectorsize*sourcei+i];
-                            value += colourdata[vectorsize*sourcei+3];
+                            sample[i] += l*colourdata[vectorsize*sourcei+i];
+
+                        const int id = opiddata[sourcei];
+                        if (alphaMap.find(id) == alphaMap.end()) {
+                            alphaMap.insert(std::pair<int, float>(id, sample[vectorsize-1]));
+                            counterMap.insert(std::pair<int, int>(id, 1));
+                        } else {
+                            alphaMap[id] += sample[vectorsize-1];
+                            counterMap[id] += 1;
+                        }
+
+
+                        // std::cout << l << ",";
+                        // This is wrong though...
                         }
                         counter++;
                     }
                 }
             }
 
-            for (int i = 0; i < vectorsize; ++i)
-                opacitySample[i] /= counter;
+            // std::cout << std::en
+            // showing contents:
+        std::cout << "alphaMap contains:\n";
+        std::map<int, float>::const_iterator it;
+         for (it=alphaMap.begin(); it!=alphaMap.end(); ++it)
+            std::cout << it->first << " => " << it->second / (float)counterMap[it->first];
+        std::cout << '\n';
 
-            value /= counter;
+          
+           for (int i = 0; i < vectorsize; ++i)
+              sample[i] /= mySamplesPerPixelX;
+            // value /= counter;
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = value;
+                *destination = sample[i];
         }
     }
 }
