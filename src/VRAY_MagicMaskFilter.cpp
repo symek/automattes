@@ -184,13 +184,14 @@ VRAY_MagicMaskFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 opacitySample[i] = 0;
 
-            int counter=0;
+            int counter=1;
+            float value = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
                 {
-                     if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
-                      sourcey >= sourcefirstoy && sourcey <= sourcelastoy)
+                    if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
+                      sourcey >= sourcefirstoy && sourcey <= sourcelastoy) 
                     {
 
                         // Find (x,y) of sample relative to *middle* of pixel
@@ -198,7 +199,8 @@ VRAY_MagicMaskFilter::filter(
                         // float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
                         const int sourcei = sourcex + sourcewidth*sourcey;
                         for (int i = 0; i < vectorsize; ++i) {
-                            opacitySample[i] = opacitydata[vectorsize*sourcei+i];
+                            opacitySample[i] = colourdata[vectorsize*sourcei+i];
+                            value += colourdata[vectorsize*sourcei+3];
                         }
                         counter++;
                     }
@@ -208,8 +210,10 @@ VRAY_MagicMaskFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 opacitySample[i] /= counter;
 
+            value /= counter;
+
             for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = opacitySample[i];
+                *destination = value;
         }
     }
 }
