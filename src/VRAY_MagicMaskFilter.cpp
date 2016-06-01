@@ -11,6 +11,7 @@
 #include <SYS/SYS_Math.h>
 #include <iostream>
 #include <map>
+#include <OpenEXR/half.h>
 
 using namespace HA_MMask;
 
@@ -125,6 +126,24 @@ inline float gaussianFilter(float x, float y, float expv, float alpha)
     return gaussian(x, expv, alpha) * gaussian(y, expv, alpha);
 }
 
+inline void packFloats(const float a, const float b, float &store)
+{
+    const half first = half(a); const half second = half(b);
+    int16_t sh1 = *reinterpret_cast<int16_t*>((void*) &first);
+    int16_t sh2 = *reinterpret_cast<int16_t*>((void*) &second);
+    int32_t tmp = ( sh2 << 16) | sh1;
+          store = *reinterpret_cast<float*>((void*)&(tmp)); 
+}
+
+
+inline void unpackFloats(const float store, float &a, float &b)
+{
+    int16_t unpack16a = *reinterpret_cast<int16_t*>((void*)&store);
+    int16_t unpack16b = *reinterpret_cast<int32_t*>((void*)&store) >> 16;
+    a = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16a));
+    b = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16b));
+}
+
 }
 
 void
@@ -208,10 +227,7 @@ VRAY_MagicMaskFilter::filter(
             std::map<int, float> alphaMap;
             std::map<int, float> counterMap;
 
-            int counter=0;
-            float value = 0;
-            // float x, y, l;
-            // std::cout << "Pixel: " << destx << "," << desty << " samples: ";
+            float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
@@ -225,56 +241,35 @@ VRAY_MagicMaskFilter::filter(
                         const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
                         const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
                         // Why is that magic number?
-                        const float g = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
-                        value += g;
+                        const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
+                        gaussianNorm += gaussianWeight;
                         for (int i = 0; i < vectorsize; ++i) {
-                            sample[i] += g*colourdata[vectorsize*sourcei+i];
-
+                            sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
+                        }
                         const int id = opiddata[sourcei];
-                        if (alphaMap.find(id) == alphaMap.end()) {
-                            alphaMap.insert(std::pair<int, float>(id, sample[vectorsize-1]));
-                            counterMap.insert(std::pair<int, int>(id, 1));
+                        if (alphaMap.find(id) == alphaMap.end() && id != -1) {
+                            alphaMap.insert(std::pair<int, float>(id, 0.f));
+                            counterMap.insert(std::pair<int, int>(id, 0));
                         } 
-                        else {
-                            alphaMap[id] += sample[vectorsize-1];
+                        // const float alpha = sample[vectorsize-1];  
+                        if (id != -1) {
+                            alphaMap[id]   +=  gaussianWeight*colourdata[vectorsize*sourcei+3];
                             counterMap[id] += 1;
                         }
-
-                        // std::cout << x << ", " << y << "| ";
-                        // std::cout << l << ",";
-                        // This is wrong though...
-                        }
-                        counter++;
                     }
                 }
             }
 
-            // std::cout << std::endl;
-            // showing contents:
-        // std::cout << "alphaMap contains:\n";
-        // std::map<int, float>::const_iterator it;
-        //  for (it=alphaMap.begin(); it!=alphaMap.end(); ++it)
-        //     std::cout << it->first << " => " << it->second / (float)counterMap[it->first];
-        // std::cout << '\n';
-
-          
-           // for (int i = 0; i < vectorsize; ++i)
-              // sample[i] /= mySamplesPerPixelY*mySamplesPerPixelX;
-
-            // const int nx = sourcelastrx-sourcefirstrx+1;
-            // const int ny = sourcelastry-sourcefirstry+1;
-            for (int i = 0; i < vectorsize; ++i)
-            {
-                // sample[i] /= (((nx+ny)/2.f) * ((myOpacitySumX2+myOpacitySumY2)/2.f));
-                // sample[i] /= (nx*myOpacitySumY2);
-                sample[i] /= value;
-                
+            for(std::map<int, float>::iterator it(alphaMap.begin()); \
+                it != alphaMap.end(); ++it) {
+                it->second /= gaussianNorm;
             }
-
-            // sample[vectorsize-1] = SYSmin(sample[vectorsize-1], 1.f);
+            
+            /* make mask indexing */
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i];
+           
         }
     }
 }
