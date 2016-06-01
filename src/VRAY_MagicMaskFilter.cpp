@@ -209,7 +209,7 @@ VRAY_MagicMaskFilter::filter(
             std::map<int, float> counterMap;
 
             int counter=0;
-            // float value = 0;
+            float value = 0;
             // float x, y, l;
             // std::cout << "Pixel: " << destx << "," << desty << " samples: ";
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -224,8 +224,9 @@ VRAY_MagicMaskFilter::filter(
                         // Find (x,y) of sample relative to *middle* of pixel
                         const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
                         const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
-                        // const float g = SYSsqrt(x*x+y*y);// * myFilterWidth;
-                        const float g = gaussianFilter(x, y, myGaussianExp, myGaussianAlpha);
+                        // Why is that magic number?
+                        const float g = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
+                        value += g;
                         for (int i = 0; i < vectorsize; ++i) {
                             sample[i] += g*colourdata[vectorsize*sourcei+i];
 
@@ -260,17 +261,17 @@ VRAY_MagicMaskFilter::filter(
            // for (int i = 0; i < vectorsize; ++i)
               // sample[i] /= mySamplesPerPixelY*mySamplesPerPixelX;
 
-            const int nx = sourcelastrx-sourcefirstrx+1;
-            const int ny = sourcelastry-sourcefirstry+1;
+            // const int nx = sourcelastrx-sourcefirstrx+1;
+            // const int ny = sourcelastry-sourcefirstry+1;
             for (int i = 0; i < vectorsize; ++i)
             {
-                sample[i] /= (((nx+ny)/2.f) * ((myOpacitySumX2+myOpacitySumY2)/2.f));
+                // sample[i] /= (((nx+ny)/2.f) * ((myOpacitySumX2+myOpacitySumY2)/2.f));
                 // sample[i] /= (nx*myOpacitySumY2);
-                // sample[i] /= counter;
+                sample[i] /= value;
                 
             }
 
-            sample[vectorsize-1] = SYSmin(sample[vectorsize-1], 1.f);
+            // sample[vectorsize-1] = SYSmin(sample[vectorsize-1], 1.f);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i];
