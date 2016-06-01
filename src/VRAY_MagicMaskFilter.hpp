@@ -88,6 +88,10 @@ private:
 
     int myOpacitySamplesHalfX;
     int myOpacitySamplesHalfY;
+
+    /// Gaussians
+    float myGaussianExp;
+    float myGaussianAlpha;
 };
 
 } // End HA_MMask namespace

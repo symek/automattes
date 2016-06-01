@@ -31,6 +31,8 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
     , myUseOpID(true)
     , myMaskNumber(4)
     , myFilterWidth(2)
+    , myGaussianAlpha(1)
+    , myGaussianExp(0)
 {
 }
 
@@ -112,6 +114,17 @@ float VRAYcomputeSumX2(int samplesperpixel, float width, int &halfsamplewidth)
     return sumx2;
 }
 
+
+inline float gaussian(float d, float expv, float alpha)
+{
+    return SYSmax(0.f, float(SYSexp(-alpha*d*d) - expv));
+}
+
+inline float gaussianFilter(float x, float y, float expv, float alpha)
+{
+    return gaussian(x, expv, alpha) * gaussian(y, expv, alpha);
+}
+
 }
 
 void
@@ -122,6 +135,7 @@ VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
 
     myOpacitySumX2 = VRAYcomputeSumX2(mySamplesPerPixelX, myFilterWidth, myOpacitySamplesHalfX);
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
+    myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
     // std::cout << "myOpacitySamplesHalf: " << myOpacitySamplesHalfX  <<", " << myOpacitySamplesHalfY << std::endl; 
     // std::cout << "myOpacitySum*2: " << myOpacitySumX2  <<", " << myOpacitySumY2 << std::endl; 
@@ -177,10 +191,10 @@ VRAY_MagicMaskFilter::filter(
             // // Find the last sample to read for colour and z gradients
             const int sourcelastox = sourcefirstx + ((mySamplesPerPixelX-1)>>1) + myOpacitySamplesHalfX;
             const int sourcelastoy = sourcefirsty + ((mySamplesPerPixelY-1)>>1) + myOpacitySamplesHalfY;
-            int sourcefirstrx = sourcefirstx;
-            int sourcefirstry = sourcefirsty;
-            int sourcelastrx = sourcelastx;
-            int sourcelastry = sourcelasty;
+            int sourcefirstrx = sourcefirstox;
+            int sourcefirstry = sourcefirstoy;
+            int sourcelastrx = sourcelastox;
+            int sourcelastry = sourcelastoy;
             // sourcefirstrx = SYSmin(sourcefirstrx, sourcefirstox);
             // sourcefirstry = SYSmin(sourcefirstry, sourcefirstoy);
             // sourcelastrx  = SYSmax(sourcelastrx, sourcelastox);
@@ -195,9 +209,9 @@ VRAY_MagicMaskFilter::filter(
             std::map<int, float> counterMap;
 
             int counter=0;
-            float value = 0;
+            // float value = 0;
             // float x, y, l;
-            // std::cout << "Pixel: " << destx << "," << desty << " x,y: ";
+            // std::cout << "Pixel: " << destx << "," << desty << " samples: ";
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
@@ -210,20 +224,22 @@ VRAY_MagicMaskFilter::filter(
                         // Find (x,y) of sample relative to *middle* of pixel
                         const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
                         const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
-                        const float l = SYSsqrt(x*x+y*y);// * myFilterWidth;
+                        // const float g = SYSsqrt(x*x+y*y);// * myFilterWidth;
+                        const float g = gaussianFilter(x, y, myGaussianExp, myGaussianAlpha);
                         for (int i = 0; i < vectorsize; ++i) {
-                            sample[i] += l*colourdata[vectorsize*sourcei+i];
+                            sample[i] += g*colourdata[vectorsize*sourcei+i];
 
                         const int id = opiddata[sourcei];
                         if (alphaMap.find(id) == alphaMap.end()) {
                             alphaMap.insert(std::pair<int, float>(id, sample[vectorsize-1]));
                             counterMap.insert(std::pair<int, int>(id, 1));
-                        } else {
+                        } 
+                        else {
                             alphaMap[id] += sample[vectorsize-1];
                             counterMap[id] += 1;
                         }
 
-
+                        // std::cout << x << ", " << y << "| ";
                         // std::cout << l << ",";
                         // This is wrong though...
                         }
@@ -232,18 +248,29 @@ VRAY_MagicMaskFilter::filter(
                 }
             }
 
-            // std::cout << std::en
+            // std::cout << std::endl;
             // showing contents:
-        std::cout << "alphaMap contains:\n";
-        std::map<int, float>::const_iterator it;
-         for (it=alphaMap.begin(); it!=alphaMap.end(); ++it)
-            std::cout << it->first << " => " << it->second / (float)counterMap[it->first];
-        std::cout << '\n';
+        // std::cout << "alphaMap contains:\n";
+        // std::map<int, float>::const_iterator it;
+        //  for (it=alphaMap.begin(); it!=alphaMap.end(); ++it)
+        //     std::cout << it->first << " => " << it->second / (float)counterMap[it->first];
+        // std::cout << '\n';
 
           
-           for (int i = 0; i < vectorsize; ++i)
-              sample[i] /= mySamplesPerPixelX;
-            // value /= counter;
+           // for (int i = 0; i < vectorsize; ++i)
+              // sample[i] /= mySamplesPerPixelY*mySamplesPerPixelX;
+
+            const int nx = sourcelastrx-sourcefirstrx+1;
+            const int ny = sourcelastry-sourcefirstry+1;
+            for (int i = 0; i < vectorsize; ++i)
+            {
+                sample[i] /= (((nx+ny)/2.f) * ((myOpacitySumX2+myOpacitySumY2)/2.f));
+                // sample[i] /= (nx*myOpacitySumY2);
+                // sample[i] /= counter;
+                
+            }
+
+            sample[vectorsize-1] = SYSmin(sample[vectorsize-1], 1.f);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i];
