@@ -12,6 +12,8 @@
 #include <iostream>
 #include <map>
 #include <OpenEXR/half.h>
+#include <IMG/IMG_DeepShadow.h>
+#include <PXL/PXL_DeepSampleList.h>
 
 using namespace HA_MMask;
 
@@ -34,11 +36,16 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
     , myFilterWidth(2)
     , myGaussianAlpha(1)
     , myGaussianExp(0)
+    , myXRes(1280)
+    , myYRes(720)
+    , myDeepImagePath("./test.rat")
 {
 }
 
 VRAY_MagicMaskFilter::~VRAY_MagicMaskFilter()
 {
+    myDsm->close();
+    delete myDsm;
 }
 
 VRAY_PixelFilter *
@@ -55,25 +62,16 @@ VRAY_MagicMaskFilter::setArgs(int argc, const char *const argv[])
 {
     UT_Args args;
     args.initialize(argc, argv);
-    args.stripOptions("i:z:o:n:w:");
+    args.stripOptions("i:z:o:n:w:x:y:p:");
 
-    if (args.found('i')) {
-        myUseOpID = true;
-    }
-    if (args.found('z')) {
-        mySortByPz = true;
-    }
-    if (args.found('o')) {
-        mySortByOpacity = true;
-    }
-    if (args.found('n')) {
-       myMaskNumber =  args.iargp('n');
-    }
-    if (args.found('w')) {
-        myFilterWidth = args.fargp('w');
-    }
-
-
+    if (args.found('i')) { myUseOpID  = true; }
+    if (args.found('z')) { mySortByPz = true; }
+    if (args.found('o')) { mySortByOpacity = true; }
+    if (args.found('n')) { myMaskNumber  = args.iargp('n'); }
+    if (args.found('w')) { myFilterWidth = args.fargp('w'); }
+    if (args.found('p')) { myDeepImagePath = args.argp('p');}
+    if (args.found('x')) { myXRes = args.iargp('x'); }
+    if (args.found('y')) { myYRes = args.iargp('y'); }
 }
 
 void
@@ -155,9 +153,9 @@ VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumX2 = VRAYcomputeSumX2(mySamplesPerPixelX, myFilterWidth, myOpacitySamplesHalfX);
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
+    myDsm          = new IMG_DeepShadow();
+    myDsm->create(myDeepImagePath, myXRes, myYRes, 1  /*mySamplesPerPixelX*/,1  /*mySamplesPerPixelY*/); // !!!
 
-    // std::cout << "myOpacitySamplesHalf: " << myOpacitySamplesHalfX  <<", " << myOpacitySamplesHalfY << std::endl; 
-    // std::cout << "myOpacitySum*2: " << myOpacitySumX2  <<", " << myOpacitySumY2 << std::endl; 
 }
 
 void
@@ -188,17 +186,27 @@ VRAY_MagicMaskFilter::filter(
     const float *const colourdata = \
     getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_CFAF));
 
+    const float * pixeldata = NULL;
+    const int pixelnumindex = getChannelIdxByName(imager, "pixelnum");
+    if (pixelnumindex != -1)
+        pixeldata = getSampleData(source, pixelnumindex );
+
+    
+
     UT_ASSERT(opacitydata != NULL);
     UT_ASSERT(mySortByPz == (zdata != NULL));
     UT_ASSERT(myUseOpID == (opiddata != NULL));
+    UT_ASSERT(pixeldata != NULL);
 
-    // const float normalizer = 1.0f/mySamplesPerPixelX*mySamplesPerPixelY;
+
+    IMG_DeepPixelWriter writer(*myDsm);
+
     for (int desty = 0; desty < destheight; ++desty)
     {
         for (int destx = 0; destx < destwidth; ++destx)
         {
 
-            // I am giving up my own attempts and copy/paste from HDK example...
+            // Thanks SESI for HDK example...
             // First, compute the sample bounds of the pixel
             const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
             const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
@@ -225,7 +233,6 @@ VRAY_MagicMaskFilter::filter(
                 sample[i] = 0;
 
             std::map<int, float> alphaMap;
-            std::map<int, float> counterMap;
 
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -240,32 +247,46 @@ VRAY_MagicMaskFilter::filter(
                         // Find (x,y) of sample relative to *middle* of pixel
                         const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
                         const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
-                        // Why is that magic number?
+
+                        // TODO: remove magic number
                         const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
+
                         for (int i = 0; i < vectorsize; ++i) {
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
                         const int id = opiddata[sourcei];
-                        if (alphaMap.find(id) == alphaMap.end() && id != -1) {
+                        if (alphaMap.find(id) == alphaMap.end()) {
                             alphaMap.insert(std::pair<int, float>(id, 0.f));
-                            counterMap.insert(std::pair<int, int>(id, 0));
-                        } 
-                        // const float alpha = sample[vectorsize-1];  
-                        if (id != -1) {
-                            alphaMap[id]   +=  gaussianWeight*colourdata[vectorsize*sourcei+3];
-                            counterMap[id] += 1;
+                        }  
+                        if (1) {
+                            alphaMap[id] += gaussianWeight*colourdata[vectorsize*sourcei+3];
                         }
                     }
                 }
             }
 
-            for(std::map<int, float>::iterator it(alphaMap.begin()); \
-                it != alphaMap.end(); ++it) {
-                it->second /= gaussianNorm;
+            
+            const int psidx = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
+            sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
+            int px, py; px = py = 0;
+
+            if (pixeldata) {
+                px = static_cast<int>(pixeldata[3*psidx]);
+                py = static_cast<int>(pixeldata[3*psidx+1]);
+            }
+
+            writer.open(px, py);
+
+            std::map<int, float>::const_iterator it(alphaMap.begin());
+            for(; it != alphaMap.end(); ++it) {
+                float v[3];
+                v[0] = v[1] = v[2] = it->second / gaussianNorm;;
+                const float z = static_cast<float>(it->first) / 1000.0f;
+                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
             }
             
-            /* make mask indexing */
+            writer.close();
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i];

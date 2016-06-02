@@ -8,9 +8,11 @@
 #define __VRAY_MagicMaskFilter__
 
 #include <VRAY/VRAY_PixelFilter.h>
+#include <VRAY/VRAY_Procedural.h>
 
 class VRAY_Imager;
 class VRAY_SampleBuffer;
+class IMG_DeepShadow;
 
 namespace HA_MMask {
 
@@ -92,7 +94,15 @@ private:
     /// Gaussians
     float myGaussianExp;
     float myGaussianAlpha;
+
+    IMG_DeepShadow *myDsm;
+
+    int myXRes;
+    int myYRes;
+
+    const char *myDeepImagePath;
 };
+
 
 } // End HA_MMask namespace
 
