@@ -44,8 +44,28 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
 
 VRAY_MagicMaskFilter::~VRAY_MagicMaskFilter()
 {
+    IMG_DeepPixelWriter writer(*myDsm);
+    for (int y=0; y<myYRes; ++y) {
+        for(int x=0; x<myXRes; ++x) {
+            //DEBUG_PRINT("Pixel: %i,%i, mask: ", x, y);
+            const IdMask mask = mySamples->get(x, y); 
+            writer.open(x, y);
+            IdMask::const_iterator it(mask.begin());
+            for (; it != mask.end(); ++it) {
+                //DEBUG_PRINT("%i,", it->first);
+                const float z = it->first / 100.f;
+                float v[3];
+                v[0] = v[1] = v[2] = it->second;
+                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
+            }
+            //DEBUG_PRINT("\n", 0);
+            writer.close();
+        }
+    }
+    
     myDsm->close();
     delete myDsm;
+    delete mySamples;
 }
 
 VRAY_PixelFilter *
@@ -155,6 +175,10 @@ VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
     myDsm          = new IMG_DeepShadow();
     myDsm->create(myDeepImagePath, myXRes, myYRes, 1  /*mySamplesPerPixelX*/,1  /*mySamplesPerPixelY*/); // !!!
+    // DEBUG_PRINT("%s", "Starting new filter.");
+
+    mySamples = new MagicMaskSamples();
+    mySamples->init(myXRes, myYRes);   
 
 }
 
@@ -222,17 +246,13 @@ VRAY_MagicMaskFilter::filter(
             int sourcefirstry = sourcefirstoy;
             int sourcelastrx = sourcelastox;
             int sourcelastry = sourcelastoy;
-            // sourcefirstrx = SYSmin(sourcefirstrx, sourcefirstox);
-            // sourcefirstry = SYSmin(sourcefirstry, sourcefirstoy);
-            // sourcelastrx  = SYSmax(sourcelastrx, sourcelastox);
-            // sourcelastry  = SYSmax(sourcelastry, sourcelastoy);
-            
+          
            
             UT_StackBuffer<float> sample(vectorsize);
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0;
 
-            std::map<int, float> alphaMap;
+            IdMask alphaMap;
 
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -276,17 +296,8 @@ VRAY_MagicMaskFilter::filter(
                 py = static_cast<int>(pixeldata[3*psidx+1]);
             }
 
-            writer.open(px, py);
-
-            std::map<int, float>::const_iterator it(alphaMap.begin());
-            for(; it != alphaMap.end(); ++it) {
-                float v[3];
-                v[0] = v[1] = v[2] = it->second / gaussianNorm;;
-                const float z = static_cast<float>(it->first) / 1000.0f;
-                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
-            }
-            
-            writer.close();
+            // IMG_DeepPixelWriter can't handle this..? 
+            mySamples->write(px, py, alphaMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i];

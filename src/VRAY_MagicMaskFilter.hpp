@@ -10,11 +10,59 @@
 #include <VRAY/VRAY_PixelFilter.h>
 #include <VRAY/VRAY_Procedural.h>
 
+#ifdef DEBUG
+#define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) do {} while (0)
+#endif
+
 class VRAY_Imager;
 class VRAY_SampleBuffer;
 class IMG_DeepShadow;
+class IMG_DeepPixelWriter;
+
+typedef  std::map<int, float> IdMask;
+typedef  std::vector<std::vector<IdMask> > PixelSamples;
 
 namespace HA_MMask {
+
+struct MagicMaskSamples
+{
+    void init(const int xres, const int yres) 
+    {
+        mySamples.resize(0);
+        myXRes = xres;
+        myYRes = yres;
+        for (int y=0; y<yres; ++y) {
+            std::vector<IdMask>  line;
+            for (int x=0; x < xres; ++x) {
+                IdMask mask;
+                line.push_back(mask);
+            }
+            mySamples.push_back(line);
+        }
+    }
+
+    void write(const int x, const int y, const IdMask &mask) 
+    {
+        const int mx = SYSmin(x, myXRes-1);
+        const int my = SYSmin(y, myYRes-1);
+        mySamples.at(my).at(mx) = mask;
+    }   
+
+    const IdMask get(const int x, const int y) const 
+    {
+        const int mx = SYSmin(x, myXRes-1);
+        const int my = SYSmin(y, myYRes-1);
+        return  mySamples.at(my).at(mx);
+    }
+
+private:
+    PixelSamples mySamples;
+    int myXRes;
+    int myYRes;
+};
+
 
 class VRAY_MagicMaskFilter : public VRAY_PixelFilter {
 public:
@@ -95,12 +143,13 @@ private:
     float myGaussianExp;
     float myGaussianAlpha;
 
-    IMG_DeepShadow *myDsm;
+    IMG_DeepShadow      *myDsm;
 
     int myXRes;
     int myYRes;
 
-    const char *myDeepImagePath;
+    const char       *myDeepImagePath;
+    MagicMaskSamples *mySamples;
 };
 
 
