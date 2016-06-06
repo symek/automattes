@@ -260,6 +260,7 @@ VRAY_MagicMaskFilter::filter(
                 sample[i] = 0;
 
             IdMask sampleMap;
+            IdMask weightMap;
 
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -285,9 +286,11 @@ VRAY_MagicMaskFilter::filter(
                         const int id = opiddata[sourcei];
                         if (sampleMap.find(id) == sampleMap.end()) {
                             sampleMap.insert(std::pair<int, float>(id, 0.f));
+                            weightMap.insert(std::pair<int, float>(id, 0.f));
                         }  
                         if (1) {
                             sampleMap[id] += gaussianWeight*colourdata[vectorsize*sourcei+3];
+                            weightMap[id] += gaussianWeight;
                         }
                     }
                 }
@@ -305,7 +308,7 @@ VRAY_MagicMaskFilter::filter(
 
             // IMG_DeepPixelWriter can't handle this..? 
             if (sampleMap.size())
-                mySamples->write(px, py, sampleMap, gaussianNorm);
+                mySamples->write(px, py, sampleMap, weightMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
