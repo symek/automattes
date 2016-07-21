@@ -43,16 +43,10 @@ struct MagicMaskSamples
         }
     }
 
-    void write(const int x, const int y, IdMask &mask,  const IdMask &weights) 
+    void write(const int x, const int y, IdMask &mask) 
     {
         const int mx = SYSmin(x, myXRes-1);
         const int my = SYSmin(y, myYRes-1);
-        if (mask.size() == weights.size()) {
-            IdMask::iterator       it(mask.begin());
-            IdMask::const_iterator jt(weights.begin());
-            for(; it!=mask.end(); ++it, ++jt)
-                it->second /= jt->second;
-        }
         mySamples.at(my).at(mx) = mask;
     }   
 

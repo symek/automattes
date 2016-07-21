@@ -42,6 +42,7 @@ VRAY_MagicMaskFilter::VRAY_MagicMaskFilter()
 {
 }
 
+
 VRAY_MagicMaskFilter::~VRAY_MagicMaskFilter()
 {
     IMG_DeepPixelWriter writer(*myDsm);
@@ -260,7 +261,7 @@ VRAY_MagicMaskFilter::filter(
                 sample[i] = 0;
 
             IdMask sampleMap;
-            IdMask weightMap;
+            // IdMask weightMap;
 
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -283,32 +284,31 @@ VRAY_MagicMaskFilter::filter(
                         for (int i = 0; i < vectorsize; ++i) {
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
-                        const int id = opiddata[sourcei];
-                        if (sampleMap.find(id) == sampleMap.end()) {
-                            sampleMap.insert(std::pair<int, float>(id, 0.f));
-                            weightMap.insert(std::pair<int, float>(id, 0.f));
-                        }  
-                        if (1) {
-                            sampleMap[id] += gaussianWeight*colourdata[vectorsize*sourcei+3];
-                            weightMap[id] += gaussianWeight;
-                        }
+
+                        const float weightedSample = gaussianWeight * colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
+                        const int   idMatte        = opiddata[sourcei];
+
+                        if (sampleMap.find(idMatte) == sampleMap.end())
+                            sampleMap.insert(std::pair<int, float>(idMatte, weightedSample));
+                        else 
+                            sampleMap[idMatte] += weightedSample;
                     }
                 }
             }
 
             
-            const int psidx = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
+            const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
             sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
             int px, py; px = py = 0;
 
             if (pixeldata) {
-                px = static_cast<int>(pixeldata[3*psidx]);
-                py = static_cast<int>(pixeldata[3*psidx+1]);
+                px = static_cast<int>(pixeldata[3*pixelIndex]);
+                py = static_cast<int>(pixeldata[3*pixelIndex+1]);
             }
 
             // IMG_DeepPixelWriter can't handle this..? 
             if (sampleMap.size())
-                mySamples->write(px, py, sampleMap, weightMap);
+                mySamples->write(px, py, sampleMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
