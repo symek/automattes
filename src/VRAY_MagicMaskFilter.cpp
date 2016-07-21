@@ -56,7 +56,7 @@ VRAY_MagicMaskFilter::~VRAY_MagicMaskFilter()
             for (; it != mask.end(); ++it) {
                 const float z = it->first;
                 float v[3];
-                v[0] = v[1] = v[2] = it->second;
+                v[0] = v[1] = v[2] = SYSmax(it->second, 0.f);
                 // DEBUG_PRINT("%i at %f, ", it->first, v[0]);
                 writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
             }
@@ -179,7 +179,7 @@ VRAY_MagicMaskFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myDsm->setOption("deepcompression", "1");
     myDsm->setOption("zbias", "0.05");
     myDsm->setOption("depth_planes", "Pz,Zback");
-    myDsm->setOption("compositing", 1);
+    myDsm->setOption("compositing", 0);
     
     myDsm->create(myDeepImagePath, myXRes, myYRes, 1  /*mySamplesPerPixelX*/,1  /*mySamplesPerPixelY*/); // !!!
     // DEBUG_PRINT("%s", "Starting new filter.");
@@ -278,20 +278,27 @@ VRAY_MagicMaskFilter::filter(
 
                         // TODO: remove magic number
                         const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
-                        gaussianNorm += gaussianWeight;
 
                         for (int i = 0; i < vectorsize; ++i) {
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
                         const int id = opiddata[sourcei];
+                        
                         if (sampleMap.find(id) == sampleMap.end()) {
                             sampleMap.insert(std::pair<int, float>(id, 0.f));
                             weightMap.insert(std::pair<int, float>(id, 0.f));
-                        }  
-                        if (1) {
-                            sampleMap[id] += gaussianWeight*colourdata[vectorsize*sourcei+3];
-                            weightMap[id] += gaussianWeight;
                         }
+                        const float alpha = colourdata[vectorsize*sourcei+3];
+                        sampleMap[id] += gaussianWeight*alpha;
+
+                        // if (alpha)
+                            gaussianNorm += gaussianWeight;
+
+                        // weightMap::iterator it(weightMap.begin());
+                        // for (; it != sampleMap.end(); ++it) {
+                            // if (it->first != id)
+                                // it->second += gaussianWeight;
+                        // }
                     }
                 }
             }
@@ -308,7 +315,7 @@ VRAY_MagicMaskFilter::filter(
 
             // IMG_DeepPixelWriter can't handle this..? 
             if (sampleMap.size())
-                mySamples->write(px, py, sampleMap, weightMap);
+                mySamples->write(px, py, sampleMap, gaussianNorm);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
