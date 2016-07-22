@@ -48,12 +48,12 @@ VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
     IMG_DeepPixelWriter writer(*myDsm);
     for (int y=0; y<myYRes; ++y) {
         for(int x=0; x<myXRes; ++x) {
-            const IdMask mask = mySamples->get(x, y);
+            const IdSamples mask = mySamples->get(x, y);
             if (mask.size() == 0)
                 continue; 
             writer.open(x, y);
             // DEBUG_PRINT("pixel %i, %i. Samples:", x, y);
-            IdMask::const_iterator it(mask.begin());
+            IdSamples::const_iterator it(mask.begin());
             for (; it != mask.end(); ++it) {
                 const float z = it->first;
                 float v[3];
@@ -260,9 +260,7 @@ VRAY_AutomatteFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0;
 
-            IdMask sampleMap;
-            // IdMask weightMap;
-
+            IdSamples sampleMap;
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
@@ -285,13 +283,13 @@ VRAY_AutomatteFilter::filter(
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
 
-                        const float weightedSample = gaussianWeight * colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
-                        const int   idMatte        = opiddata[sourcei];
+                        const float alpha   = colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
+                        const int   idMatte = opiddata[sourcei];
 
                         if (sampleMap.find(idMatte) == sampleMap.end())
-                            sampleMap.insert(std::pair<int, float>(idMatte, weightedSample));
+                            sampleMap.insert(std::pair<int, float>(idMatte, alpha));
                         else 
-                            sampleMap[idMatte] += weightedSample;
+                            sampleMap[idMatte] += (alpha * gaussianWeight);
                     }
                 }
             }
@@ -308,7 +306,7 @@ VRAY_AutomatteFilter::filter(
 
             // IMG_DeepPixelWriter can't handle this..? 
             if (sampleMap.size())
-                mySamples->write(px, py, sampleMap);
+                mySamples->write(px, py, gaussianNorm, sampleMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;

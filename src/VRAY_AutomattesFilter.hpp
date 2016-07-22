@@ -21,8 +21,8 @@ class VRAY_SampleBuffer;
 class IMG_DeepShadow;
 class IMG_DeepPixelWriter;
 
-typedef  std::map<int, float> IdMask;
-typedef  std::vector<std::vector<IdMask> > PixelSamples;
+typedef  std::map<int, float>  IdSamples;
+typedef  std::vector<std::vector<IdSamples> > IdImage;
 
 namespace HA_HDK {
 
@@ -30,35 +30,38 @@ struct AutomatteSamples
 {
     void init(const int xres, const int yres) 
     {
-        mySamples.resize(0);
+        myImage.resize(0);
         myXRes = xres;
         myYRes = yres;
         for (int y=0; y<yres; ++y) {
-            std::vector<IdMask>  line;
+            std::vector<IdSamples>  line;
             for (int x=0; x < xres; ++x) {
-                IdMask mask;
+                IdSamples mask;
                 line.push_back(mask);
             }
-            mySamples.push_back(line);
+            myImage.push_back(line);
         }
     }
 
-    void write(const int x, const int y, IdMask &mask) 
+    void write(const int x, const int y, const float norm, IdSamples &mask) 
     {
         const int mx = SYSmin(x, myXRes-1);
         const int my = SYSmin(y, myYRes-1);
-        mySamples.at(my).at(mx) = mask;
+        IdSamples::iterator it(mask.begin());
+        for(; it!=mask.end(); ++it)
+            it->second = SYSmax(it->second/norm, 0.f);
+        myImage.at(my).at(mx) = mask;
     }   
 
-    const IdMask get(const int x, const int y) const 
+    const IdSamples get(const int x, const int y) const 
     {
         const int mx = SYSmin(x, myXRes-1);
         const int my = SYSmin(y, myYRes-1);
-        return  mySamples.at(my).at(mx);
+        return  myImage.at(my).at(mx);
     }
 
 private:
-    PixelSamples mySamples;
+    IdImage myImage;
     int myXRes;
     int myYRes;
 };
