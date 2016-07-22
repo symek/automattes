@@ -45,26 +45,6 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
 
 VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 {
-    IMG_DeepPixelWriter writer(*myDsm);
-    for (int y=0; y<myYRes; ++y) {
-        for(int x=0; x<myXRes; ++x) {
-            const IdSamples mask = mySamples->get(x, y);
-            if (mask.size() == 0)
-                continue; 
-            writer.open(x, y);
-            // DEBUG_PRINT("pixel %i, %i. Samples:", x, y);
-            IdSamples::const_iterator it(mask.begin());
-            for (; it != mask.end(); ++it) {
-                const float z = it->first;
-                float v[3];
-                v[0] = v[1] = v[2] = it->second;
-                // DEBUG_PRINT("%i at %f, ", it->first, v[0]);
-                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
-            }
-            // std::cout << "\n";
-            writer.close();
-        }
-    }
     
     myDsm->close();
     delete myDsm;
@@ -304,9 +284,22 @@ VRAY_AutomatteFilter::filter(
                 py = static_cast<int>(pixeldata[3*pixelIndex+1]);
             }
 
-            // IMG_DeepPixelWriter can't handle this..? 
-            if (sampleMap.size())
-                mySamples->write(px, py, gaussianNorm, sampleMap);
+            IMG_DeepPixelWriter writer(*myDsm);
+            px = SYSmin(px, myXRes-1);
+            py = SYSmin(py, myYRes-1);
+            writer.open(px, py);
+            IdSamples::const_iterator it(sampleMap.begin());
+            for (; it != sampleMap.end(); ++it) {
+                const float z = it->first;
+                float v[3];
+                v[0] = v[1] = v[2] = SYSmax(it->second/gaussianNorm, 0.f);;
+                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
+            }
+
+            writer.close();
+
+            // if (sampleMap.size())
+            //     mySamples->write(px, py, gaussianNorm, sampleMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
