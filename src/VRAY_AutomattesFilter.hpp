@@ -1,5 +1,9 @@
 /*
- Taken stright from HDK example.
+ Partaly taken from HDK examples:
+ http://www.sidefx.com/docs/hdk15.5/_v_r_a_y_2_v_r_a_y__demo_edge_detect_filter_8h-example.html
+
+ Contains snippets from PsyOp
+ [1] - Jonah Friedman, Andrew C. Jones, Fully automatic ID mattes with support for motion blur and transparency.
  */
 
 #pragma once
@@ -21,10 +25,29 @@ class VRAY_SampleBuffer;
 class IMG_DeepShadow;
 class IMG_DeepPixelWriter;
 
-typedef  std::map<int, float>  IdSamples;
+typedef  std::map<uint32_t, float>  IdSamples;
 typedef  std::vector<std::vector<IdSamples> > IdImage;
 
 namespace HA_HDK {
+
+static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
+                                    "CryptoObject01", "CryptoObject02"};
+
+// From Cryptomatte specification[1]
+float hash_to_float(uint32_t hash)
+{
+    uint32_t mantissa = hash & (( 1 << 23) - 1);
+    uint32_t exponent = (hash >> 23) & ((1 << 8) - 1);
+    exponent = std::max(exponent, (uint32_t) 1);
+    exponent = std::min(exponent, (uint32_t) 254);
+    exponent = exponent << 23;
+    uint32_t sign = (hash >> 31);
+    sign = sign << 31;
+    uint32_t float_bits = sign | exponent | mantissa;
+    float f;
+    std::memcpy(&f, &float_bits, 4);
+    return f;
+}
 
 struct AutomatteSamples
 {
@@ -146,12 +169,15 @@ private:
     float myGaussianExp;
     float myGaussianAlpha;
 
-    IMG_DeepShadow      *myDsm;
+    IMG_DeepShadow        *myDsm;
+    IMG_File              *myImage;
+    UT_Array<PXL_Raster*> myRasters;
 
-    int myXRes;
-    int myYRes;
+    uint myXRes;
+    uint myYRes;
 
     const char       *myDeepImagePath;
+    const char       *myImagePath;
     AutomatteSamples *mySamples;
 };
 

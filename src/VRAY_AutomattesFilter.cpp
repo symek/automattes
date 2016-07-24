@@ -1,19 +1,22 @@
 /*
  */
-
 #include <UT/UT_DSOVersion.h>
-
-#include "VRAY_AutomattesFilter.hpp"
 #include <VRAY/VRAY_SpecialChannel.h>
 #include <UT/UT_Args.h>
 #include <UT/UT_StackBuffer.h>
 #include <SYS/SYS_Floor.h>
 #include <SYS/SYS_Math.h>
-#include <iostream>
-#include <map>
 #include <OpenEXR/half.h>
 #include <IMG/IMG_DeepShadow.h>
+#include <IMG/IMG_File.h>
+#include <PXL/PXL_Raster.h>
 #include <PXL/PXL_DeepSampleList.h>
+
+#include "VRAY_AutomattesFilter.hpp"
+
+#include <iostream>
+#include <map>
+
 
 using namespace HA_HDK;
 
@@ -39,14 +42,17 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     , myXRes(1280)
     , myYRes(720)
     , myDeepImagePath("./test.rat")
+    , myImagePath("./test.exr")
 {
 }
 
 
 VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 {
-    
     myDsm->close();
+    myImage->writeImages(myRasters, true); // free myRasters;
+    myImage->close();
+    delete myImage;
     delete myDsm;
     delete mySamples;
 }
@@ -72,7 +78,8 @@ VRAY_AutomatteFilter::setArgs(int argc, const char *const argv[])
     if (args.found('o')) { mySortByOpacity = true; }
     if (args.found('n')) { myMaskNumber  = args.iargp('n'); }
     if (args.found('w')) { myFilterWidth = args.fargp('w'); }
-    if (args.found('p')) { myDeepImagePath = args.argp('p');}
+    if (args.found('d')) { myDeepImagePath = args.argp('d');}
+    if (args.found('p')) { myImagePath     = args.argp('p'); }
     if (args.found('x')) { myXRes = args.iargp('x'); }
     if (args.found('y')) { myYRes = args.iargp('y'); }
 }
@@ -156,17 +163,27 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumX2 = VRAYcomputeSumX2(mySamplesPerPixelX, myFilterWidth, myOpacitySamplesHalfX);
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
+
     myDsm          = new IMG_DeepShadow();
     myDsm->setOption("deepcompression", "1");
     myDsm->setOption("zbias", "0.05");
     myDsm->setOption("depth_planes", "Pz,Zback");
     myDsm->setOption("compositing", 1);
-    
     myDsm->create(myDeepImagePath, myXRes, myYRes, 1  /*mySamplesPerPixelX*/,1  /*mySamplesPerPixelY*/); // !!!
     // DEBUG_PRINT("%s", "Starting new filter.");
 
     mySamples = new AutomatteSamples();
-    mySamples->init(myXRes, myYRes);   
+    mySamples->init(myXRes, myYRes);  
+
+    IMG_Stat stat = IMG_Stat(myXRes, myYRes); 
+    for (uint i=0; i<4; ++i) {
+        IMG_Plane *plane   = stat.addPlane(plane_names[i], IMG_FLOAT32, IMG_RGBA);
+        PXL_Raster *raster = new PXL_Raster(PACK_RGBA, PXL_FLOAT32, myXRes, myYRes); // note: will free at writeImages();
+        myRasters.append(raster);
+    }
+    myImage = IMG_File::create(myImagePath, stat);
+    
+    DEBUG_PRINT("%s", "Created exr image.");
 
 }
 
@@ -211,7 +228,7 @@ VRAY_AutomatteFilter::filter(
     UT_ASSERT(pixeldata != NULL);
 
 
-    IMG_DeepPixelWriter writer(*myDsm);
+    // IMG_DeepPixelWriter writer(*myDsm);
 
     for (int desty = 0; desty < destheight; ++desty)
     {
@@ -263,11 +280,11 @@ VRAY_AutomatteFilter::filter(
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
 
-                        const float alpha   = colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
-                        const int   idMatte = opiddata[sourcei];
+                        const float     alpha   = colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
+                        const uint32_t  idMatte = static_cast<uint32_t>(opiddata[sourcei]);
 
                         if (sampleMap.find(idMatte) == sampleMap.end())
-                            sampleMap.insert(std::pair<int, float>(idMatte, alpha));
+                            sampleMap.insert(std::pair<uint32_t, float>(idMatte, alpha));
                         else 
                             sampleMap[idMatte] += (alpha * gaussianWeight);
                     }
@@ -277,17 +294,20 @@ VRAY_AutomatteFilter::filter(
             
             const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
             sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
-            int px, py; px = py = 0;
+            uint px, py; px = py = 0;
 
             if (pixeldata) {
-                px = static_cast<int>(pixeldata[3*pixelIndex]);
-                py = static_cast<int>(pixeldata[3*pixelIndex+1]);
+                px = static_cast<uint>(pixeldata[3*pixelIndex]);
+                py = static_cast<uint>(pixeldata[3*pixelIndex+1]);
+                px = SYSmin(px, myXRes-1);
+                py = SYSmin(py, myYRes-1);
             }
 
+            #if 0
+
             IMG_DeepPixelWriter writer(*myDsm);
-            px = SYSmin(px, myXRes-1);
-            py = SYSmin(py, myYRes-1);
             writer.open(px, py);
+
             IdSamples::const_iterator it(sampleMap.begin());
             for (; it != sampleMap.end(); ++it) {
                 const float z = it->first;
@@ -297,6 +317,47 @@ VRAY_AutomatteFilter::filter(
             }
 
             writer.close();
+
+            #else
+
+           { 
+                uint32_t combinedId = 0;
+                std::map<float, uint32_t> idsOrderedByCoverage;
+                IdSamples::const_iterator it(sampleMap.begin());
+                // two ids per raster == 2*3+first technical raster (all RGBA)
+                for (uint i =1; i < myRasters.size()*2; ++i, ++it) {
+                    if (it!=sampleMap.end()) {   
+                        const float alpha = SYSmax(it->second/gaussianNorm, 0.f);
+                        idsOrderedByCoverage.insert(std::pair<float, uint32_t>(alpha, it->first));
+                        combinedId += it->first;
+                    } else {
+                        idsOrderedByCoverage.insert(std::pair<float, uint32_t>(0.0f, 0));
+                    }
+                }
+
+                // TODO: implement hashing generation most probably in VEX, where
+                // we have an access to objects' names;
+                float vals[4];
+                uint32_t m3hash = combinedId; //tmp
+                vals[0] = hash_to_float(m3hash);
+                vals[1] = ((float) ((m3hash << 8)) /  (float) UINT32_MAX);
+                vals[2] = ((float) ((m3hash << 16)) / (float) UINT32_MAX);
+                vals[3] = 0.0f;
+                myRasters(0)->setPixelValue(px, py, vals);
+                 
+                std::map<float, uint32_t>::const_iterator jt(idsOrderedByCoverage.end());
+                for (uint i=1; i<myRasters.size(); ++i, --it) {
+                    for (uint j=0; j<2; ++j, --jt) {
+                        const float    val  = jt->first;
+                        const uint32_t hash = hash_to_float(jt->second);
+                        vals[2*j]   = hash;
+                        vals[2*j+1] = val;    
+                    }
+            
+                    myRasters(i)->setPixelValue(px, py, vals);
+                }
+            }
+            #endif
 
             // if (sampleMap.size())
             //     mySamples->write(px, py, gaussianNorm, sampleMap);
