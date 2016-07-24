@@ -346,7 +346,7 @@ VRAY_AutomatteFilter::filter(
                 myRasters(0)->setPixelValue(px, py, vals);
                  
                 std::map<float, uint32_t>::const_iterator jt(idsOrderedByCoverage.end());
-                for (uint i=1; i<myRasters.size(); ++i, --it) {
+                for (uint i=1; i<myRasters.size(); ++i, --jt) {
                     for (uint j=0; j<2; ++j, --jt) {
                         const float    val  = jt->first;
                         const uint32_t hash = hash_to_float(jt->second);
