@@ -1,0 +1,7 @@
+# Minimal Automattes Makefile
+INSTDIR = $(HIH)
+SOURCES =  ./src/MurmurHash3.cpp ./src/VEX_AutomattesHash.cpp 
+OPTIMIZER = -O3
+DSONAME = VEX_AutomattesHash.so
+# Include HDK Makefile.
+include $(HT)/makefiles/Makefile.gnu

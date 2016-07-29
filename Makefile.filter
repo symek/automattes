@@ -5,4 +5,3 @@ OPTIMIZER = -O3
 DSONAME = VRAY_AutomattesFilter.so
 # Include HDK Makefile.
 include $(HT)/makefiles/Makefile.gnu
-
