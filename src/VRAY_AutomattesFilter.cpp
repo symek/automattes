@@ -220,6 +220,14 @@ VRAY_AutomatteFilter::filter(
     if (pixelnumindex != -1)
         pixeldata = getSampleData(source, pixelnumindex );
 
+    const float * m3hashdata = NULL;
+    const int m3hashindex = getChannelIdxByName(imager, "m3hash");
+    if (m3hashindex != -1)
+        m3hashdata = getSampleData(source, m3hashindex);
+    else
+        // TODO: make option to use either opid or m3hash.
+        m3hashdata = opiddata;
+
     
 
     UT_ASSERT(opacitydata != NULL);
@@ -258,6 +266,7 @@ VRAY_AutomatteFilter::filter(
                 sample[i] = 0;
 
             IdSamples sampleMap;
+            HashSamples hashMap;
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
@@ -280,13 +289,18 @@ VRAY_AutomatteFilter::filter(
                             sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
                         }
 
-                        const float     alpha   = colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
-                        const uint32_t  idMatte = static_cast<uint32_t>(opiddata[sourcei]);
+                        const float     alpha     = colourdata[vectorsize*sourcei+3]; // TODO: move to opacitySamples?
+                        const uint32_t  idMatte   = static_cast<uint32_t>(opiddata[sourcei]);
+                        const float     hashMatte = m3hashdata[sourcei];
 
-                        if (sampleMap.find(idMatte) == sampleMap.end())
+                        if (sampleMap.find(idMatte) == sampleMap.end()) {
                             sampleMap.insert(std::pair<uint32_t, float>(idMatte, alpha));
-                        else 
+                            hashMap.insert(std::pair<float, float>(hashMatte, alpha)); 
+                        }
+                        else {
                             sampleMap[idMatte] += (alpha * gaussianWeight);
+                            hashMap[hashMatte] += (alpha * gaussianWeight);
+                        } 
                     }
                 }
             }
@@ -322,26 +336,37 @@ VRAY_AutomatteFilter::filter(
 
            { 
                 uint32_t combinedId = 0;
+                float  combinedHash = 0;
                 std::map<float, uint32_t> idsOrderedByCoverage;
-                IdSamples::const_iterator it(sampleMap.begin());
+                std::map<float, float>    hashOrderedByCoverage;
+                IdSamples::const_iterator   it(sampleMap.begin());
+                HashSamples::const_iterator kt(hashMap.begin());
+    
                 // two ids per raster == 2*3+first technical raster (all RGBA)
-                for (uint i =1; i < myRasters.size()*2; ++i, ++it) {
+                for (uint i =1; i < myRasters.size()*2; ++i, ++it, ++kt) {
                     if (it!=sampleMap.end()) {   
                         const float alpha = SYSmax(it->second/gaussianNorm, 0.f);
                         idsOrderedByCoverage.insert(std::pair<float, uint32_t>(alpha, it->first));
+                        hashOrderedByCoverage.insert(std::pair<float, float>(alpha,   kt->first));
                         combinedId += it->first;
+                        combinedHash += kt->first; // TODO: can I add hash as  floats?
                     } else {
                         idsOrderedByCoverage.insert(std::pair<float, uint32_t>(0.0f, 0));
+                        hashOrderedByCoverage.insert(std::pair<float, float>(0.f, 0.f));
                     }
                 }
 
                 // TODO: implement hashing generation most probably in VEX, where
                 // we have an access to objects' names;
                 float vals[4];
-                uint32_t m3hash = combinedId; //tmp
-                vals[0] = hash_to_float(m3hash);
-                vals[1] = ((float) ((m3hash << 8)) /  (float) UINT32_MAX);
-                vals[2] = ((float) ((m3hash << 16)) / (float) UINT32_MAX);
+                float m3hash = combinedHash; //tmp
+                vals[0] = m3hash;
+                // vals[1] = ((float) ((m3hash << 8)) /  (float) UINT32_MAX);
+                // vals[2] = ((float) ((m3hash << 16)) / (float) UINT32_MAX);
+                uint32_t tmp;
+                std::memcpy(&tmp, &m3hash, 4); // TODO: is it enough for back-to-uint?
+                vals[1] = ((float) ((tmp << 8)) /  (float) UINT32_MAX);
+                vals[2] = ((float) ((tmp << 16)) / (float) UINT32_MAX);
                 vals[3] = 0.0f;
                 myRasters(0)->setPixelValue(px, py, vals);
                  
