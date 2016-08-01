@@ -1,6 +1,12 @@
 /*
+ Partaly taken from HDK examples:
+ http://www.sidefx.com/docs/hdk15.5/_v_e_x_2_v_e_x__example_8_c-example.html
 
+ Contains snippets from PsyOp
+ [1] - Jonah Friedman, Andrew C. Jones, Fully automatic ID mattes with support for motion blur and transparency.
  */
+
+ 
 
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
