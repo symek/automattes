@@ -29,13 +29,24 @@ float hash_to_float(uint32_t hash)
 }
 
 static void
-murmurhash3(int argc,  void *argv[], void *data)
+murmurhash3F(int argc,  void *argv[], void *data)
 {
     float *result     = static_cast<float*>(argv[0]);
     const char * name = static_cast<const char*>(argv[1]);
     uint32_t m3hash = 0;
     MurmurHash3_x86_32(name, std::strlen(name), 0, &m3hash);
     *result = hash_to_float(m3hash);
+}
+
+static void
+murmurhash3I(int argc,  void *argv[], void *data)
+{
+    uint32_t *result  = static_cast<uint32_t*>(argv[0]);
+    const char * name = static_cast<const char*>(argv[1]);
+    uint32_t m3hash = 0;
+    MurmurHash3_x86_32(name, std::strlen(name), 0, &m3hash);
+    *result = m3hash;
+
 }
 
 }
@@ -48,7 +59,15 @@ void
 newVEXOp(void *)
 {
     new VEX_VexOp("murmurhash3@&FS",  // Signature
-        murmurhash3,      // Evaluator
+        murmurhash3F,      // Evaluator
+        VEX_ALL_CONTEXT,    // Context mask
+        NULL,           // init function
+        NULL,           // cleanup function
+        VEX_OPTIMIZE_2, // Optimization level
+        true);    
+
+     new VEX_VexOp("murmurhash3@&IS",  // Signature
+        murmurhash3I,      // Evaluator
         VEX_ALL_CONTEXT,    // Context mask
         NULL,           // init function
         NULL,           // cleanup function
