@@ -25,8 +25,8 @@ class VRAY_SampleBuffer;
 class IMG_DeepShadow;
 class IMG_DeepPixelWriter;
 
-typedef  std::map<uint32_t, float>  IdSamples;
-typedef  std::map<float, float>     HashSamples;
+typedef  std::map<uint32_t, float>     IdSamples;
+typedef  std::map<uint32_t, float>     HashSamples;
 typedef  std::vector<std::vector<IdSamples> > IdImage;
 
 namespace HA_HDK {
