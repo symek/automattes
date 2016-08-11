@@ -32,29 +32,20 @@ allocPixelFilter(const char *name)
 VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     : mySamplesPerPixelX(1) 
     , mySamplesPerPixelY(1) 
-    , mySortByOpacity(false)
-    , mySortByPz(true)
     , myUseOpID(true)
-    , myMaskNumber(4)
     , myFilterWidth(2)
     , myGaussianAlpha(1)
     , myGaussianExp(0)
-    , myXRes(1280)
-    , myYRes(720)
-    , myDeepImagePath("./test.rat")
-    , myImagePath("./test.exr")
+    , myRank(0)
+    , myHashChannel("m3hash")
 {
+
 }
 
 
 VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 {
-    myDsm->close();
-    myImage->writeImages(myRasters, true); // free myRasters;
-    myImage->close();
-    delete myImage;
-    delete myDsm;
-    delete mySamples;
+
 }
 
 VRAY_PixelFilter *
@@ -71,17 +62,11 @@ VRAY_AutomatteFilter::setArgs(int argc, const char *const argv[])
 {
     UT_Args args;
     args.initialize(argc, argv);
-    args.stripOptions("i:z:o:n:w:x:y:p:");
+    args.stripOptions("i:w:h:");
 
     if (args.found('i')) { myUseOpID  = true; }
-    if (args.found('z')) { mySortByPz = true; }
-    if (args.found('o')) { mySortByOpacity = true; }
-    if (args.found('n')) { myMaskNumber  = args.iargp('n'); }
     if (args.found('w')) { myFilterWidth = args.fargp('w'); }
-    if (args.found('d')) { myDeepImagePath = args.argp('d');}
-    if (args.found('p')) { myImagePath     = args.argp('p'); }
-    if (args.found('x')) { myXRes = args.iargp('x'); }
-    if (args.found('y')) { myYRes = args.iargp('y'); }
+    if (args.found('h')) { myHashChannel = args.argp('h'); }
 }
 
 void
@@ -97,10 +82,8 @@ VRAY_AutomatteFilter::addNeededSpecialChannels(VRAY_Imager &imager)
 {
     if (myUseOpID)
         addSpecialChannel(imager, VRAY_SPECIAL_OPID);
-    if (mySortByPz)
-        addSpecialChannel(imager, VRAY_SPECIAL_PZ);
+    addSpecialChannel(imager, VRAY_SPECIAL_PZ);
 
-    addSpecialChannel(imager, VRAY_SPECIAL_OPACITYSAMPLES);
 }
 
 namespace {
@@ -164,27 +147,6 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
-    myDsm          = new IMG_DeepShadow();
-    myDsm->setOption("deepcompression", "1");
-    myDsm->setOption("zbias", "0.05");
-    myDsm->setOption("depth_planes", "Pz,Zback");
-    myDsm->setOption("compositing", 1);
-    myDsm->create(myDeepImagePath, myXRes, myYRes, 1  /*mySamplesPerPixelX*/,1  /*mySamplesPerPixelY*/); // !!!
-    // DEBUG_PRINT("%s", "Starting new filter.");
-
-    mySamples = new AutomatteSamples();
-    mySamples->init(myXRes, myYRes);  
-
-    IMG_Stat stat = IMG_Stat(myXRes, myYRes); 
-    for (uint i=0; i<4; ++i) {
-        IMG_Plane *plane   = stat.addPlane(plane_names[i], IMG_FLOAT32, IMG_RGBA);
-        PXL_Raster *raster = new PXL_Raster(PACK_RGBA, PXL_FLOAT32, myXRes, myYRes); // note: will free at writeImages();
-        myRasters.append(raster);
-    }
-    myImage = IMG_File::create(myImagePath, stat);
-    
-    DEBUG_PRINT("%s", "Created exr image.");
-
 }
 
 void
@@ -202,8 +164,6 @@ VRAY_AutomatteFilter::filter(
     const VRAY_Imager &imager) const
 {
 
-    const float *const opacitydata = \
-    getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPACITYSAMPLES));
     const float *const zdata = mySortByPz
         ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ))
         : NULL;
@@ -215,25 +175,14 @@ VRAY_AutomatteFilter::filter(
     const float *const colourdata = \
     getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_CFAF));
 
-    const float * pixeldata = NULL;
-    const int pixelnumindex = getChannelIdxByName(imager, "pixelnum");
-    if (pixelnumindex != -1)
-        pixeldata = getSampleData(source, pixelnumindex );
-
-    const float * m3hashdata = NULL;
-    const int m3hashindex = getChannelIdxByName(imager, "m3hash");
-    if (m3hashindex != -1)
-        m3hashdata = getSampleData(source, m3hashindex);
-    else
-        // TODO: make option to use either opid or m3hash.
-        m3hashdata = opiddata;
+    const float * m3hashdata = !myUseOpID
+        ? getChannelIdxByName(imager, myHashChannel)
+        : NULL;
 
     
-
-    UT_ASSERT(opacitydata != NULL);
     UT_ASSERT(mySortByPz == (zdata != NULL));
     UT_ASSERT(myUseOpID == (opiddata != NULL));
-    UT_ASSERT(pixeldata != NULL);
+    UT_ASSERT(myUseOpID != (m3hashdata != NULL));
 
 
     // IMG_DeepPixelWriter writer(*myDsm);
@@ -312,22 +261,6 @@ VRAY_AutomatteFilter::filter(
                 py = SYSmin(py, myYRes-1);
             }
 
-            #if 0
-
-            IMG_DeepPixelWriter writer(*myDsm);
-            writer.open(px, py);
-
-            IdSamples::const_iterator it(sampleMap.begin());
-            for (; it != sampleMap.end(); ++it) {
-                const float z = it->first;
-                float v[3];
-                v[0] = v[1] = v[2] = SYSmax(it->second/gaussianNorm, 0.f);;
-                writer.write(z, v, 3, PXL_DeepSampleList::MATTE_SURFACE, -1, 0);
-            }
-
-            writer.close();
-
-            #else
 
            { 
                 
@@ -357,6 +290,7 @@ VRAY_AutomatteFilter::filter(
                 vals[2] = ((float) ((combinedHash << 16)) / (float) UINT32_MAX);
                 vals[3] = 0.0f;
                 myRasters(0)->setPixelValue(px, py, vals);
+
                 
                 // Then 3 rasters with two mattes each:
                 std::map<float, uint32_t>::const_reverse_iterator jt(hashOrderedByCoverage.rbegin());
@@ -375,10 +309,6 @@ VRAY_AutomatteFilter::filter(
                 }
             }
 
-            #endif
-
-            // if (sampleMap.size())
-            //     mySamples->write(px, py, gaussianNorm, sampleMap);
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
