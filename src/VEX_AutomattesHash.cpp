@@ -18,6 +18,8 @@
 
 namespace HA_HDK {
 
+static const uint32_t background = 2287214504; // precomputed from  MurmurHash3_x86_32("_ray_fog_object_internal_xyzzy", ...);
+
 // From Cryptomatte specification[1]
 float hash_to_float(uint32_t hash)
 {
@@ -41,7 +43,7 @@ murmurhash3F(int argc,  void *argv[], void *data)
     const char * name = static_cast<const char*>(argv[1]);
     uint32_t m3hash = 0;
     MurmurHash3_x86_32(name, std::strlen(name), 0, &m3hash);
-    *result = hash_to_float(m3hash);
+    *result = (m3hash != background) ? hash_to_float(m3hash) : 0.f;
 }
 
 static void
@@ -51,8 +53,7 @@ murmurhash3I(int argc,  void *argv[], void *data)
     const char * name = static_cast<const char*>(argv[1]);
     uint32_t m3hash = 0;
     MurmurHash3_x86_32(name, std::strlen(name), 0, &m3hash);
-    *result = m3hash;
-
+    *result = (m3hash != background) ? m3hash : 0;
 }
 
 }
