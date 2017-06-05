@@ -1,7 +1,7 @@
 # Minimal Automattes Makefile
 INSTDIR = $(HIH)
 SOURCES =  ./src/MurmurHash3.cpp ./src/VRAY_AutomattesFilter.cpp 
-OPTIMIZER = -O3
+OPTIMIZER = -O3 -fpermissive
 DSONAME = VRAY_AutomattesFilter.so
 # Include HDK Makefile.
 include $(HT)/makefiles/Makefile.gnu

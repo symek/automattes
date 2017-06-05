@@ -23,7 +23,6 @@
 
 typedef  std::map<float, float>  HashMap;
 
-
 namespace HA_HDK {
 
 static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
@@ -44,48 +43,6 @@ float hash_to_float(uint32_t hash)
     std::memcpy(&f, &float_bits, 4);
     return f;
 }
-
-struct AutomatteSamples
-{
-    void init(const int xres, const int yres) 
-    {
-        myImage.resize(0);
-        myXRes = xres;
-        myYRes = yres;
-        for (int y=0; y<yres; ++y) {
-            std::vector<IdSamples>  line;
-            for (int x=0; x < xres; ++x) {
-                IdSamples mask;
-                line.push_back(mask);
-            }
-            myImage.push_back(line);
-        }
-    }
-
-    void write(const int x, const int y, const float norm, IdSamples &mask) 
-    {
-        const int mx = SYSmin(x, myXRes-1);
-        const int my = SYSmin(y, myYRes-1);
-        IdSamples::iterator it(mask.begin());
-        for(; it!=mask.end(); ++it)
-            it->second = SYSmax(it->second/norm, 0.f);
-        myImage.at(my).at(mx) = mask;
-    }   
-
-    const IdSamples get(const int x, const int y) const 
-    {
-        const int mx = SYSmin(x, myXRes-1);
-        const int my = SYSmin(y, myYRes-1);
-        return  myImage.at(my).at(mx);
-    }
-
-private:
-    IdImage myImage;
-    int myXRes;
-    int myYRes;
-};
-
-
 class VRAY_AutomatteFilter : public VRAY_PixelFilter {
 public:
     VRAY_AutomatteFilter();
@@ -133,6 +90,7 @@ private:
     // 
     int myUseOpID;
     int myRank;
+    int mySortByPz;
 
     // Filter width (default 2)
     float myFilterWidth;

@@ -32,6 +32,7 @@ allocPixelFilter(const char *name)
 VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     : mySamplesPerPixelX(1) 
     , mySamplesPerPixelY(1) 
+    , mySortByPz(1)
     , myUseOpID(true)
     , myFilterWidth(2)
     , myGaussianAlpha(1)
@@ -214,13 +215,13 @@ VRAY_AutomatteFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0;
 
-            HashSamples hashMap;
+            // HashMap hash_map;
             float gaussianNorm = 0;
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
                 {
-                    const int sourcei = sourcex + sourcewidth*sourcey;
+                    const int sourceidx = sourcex + sourcewidth*sourcey;
                     if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
                       sourcey >= sourcefirstoy && sourcey <= sourcelastoy) 
                     {
@@ -234,81 +235,76 @@ VRAY_AutomatteFilter::filter(
                         gaussianNorm += gaussianWeight;
 
                         for (int i = 0; i < vectorsize; ++i) {
-                            sample[i] += gaussianWeight*colourdata[vectorsize*sourcei+i];
+                            sample[i] += gaussianWeight*colourdata[vectorsize*sourceidx+i];
                         }
 
-                        const float   alpha = colourdata[vectorsize*sourcei+3] * gaussianWeight; // TODO: move to opacitySamples?
-                        const uint32_t hash = m3hashdata[sourcei];
+                        // const float alpha = colourdata[vectorsize*sourceidx+3] * gaussianWeight; // TODO: move to opacitySamples?
+                        // const float hash = m3hashdata[sourceidx];
 
-                        if (hashMap.find(hash) == hashMap.end()) {
-                            hashMap.insert(std::pair<uint32_t, float>(hash, alpha)); 
-                        }
-                        else {
-                            hashMap[hash] += alpha;
-                        } 
+                        // if (hash_map.find(hash) == hash_map.end()) {
+                        //     hash_map.insert(std::pair<float, float>(hash, alpha)); 
+                        // }
+                        // else {
+                        //     hash_map[hash] += alpha;
+                        // } 
                     }
                 }
             }
 
-            const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
-            sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
-            uint px, py; px = py = 0;
+            // const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
+            // sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
+            // uint px, py; px = py = 0;
 
-            if (pixeldata) {
-                px = static_cast<uint>(pixeldata[3*pixelIndex]);
-                py = static_cast<uint>(pixeldata[3*pixelIndex+1]);
-                px = SYSmin(px, myXRes-1);
-                py = SYSmin(py, myYRes-1);
-            }
+            // if (pixeldata) {
+            //     px = static_cast<uint>(pixeldata[3*pixelIndex]);
+            //     py = static_cast<uint>(pixeldata[3*pixelIndex+1]);
+            //     px = SYSmin(px, myXRes-1);
+            //     py = SYSmin(py, myYRes-1);
+            // }
 
 
-           { 
-                
-                std::map<float, uint32_t>   hashOrderedByCoverage;
+           // { //
+           //      std::map<float, float>   hashOrderedByCoverage;
     
-                uint32_t combinedHash = 0;
-                // two ids per raster == 2*3+first technical raster (all RGBA)
-                HashSamples::const_iterator it(hashMap.begin());
-                for (uint i =1; i < myRasters.size()*2; ++i, ++it) {
-                    if (it!=hashMap.end()) {   
-                        const float   alpha = SYSmax(it->second/gaussianNorm, 0.f);
-                        const uint32_t hash = it->first ? alpha != 0.0f: 0;
-                        hashOrderedByCoverage.insert(std::pair<float, uint32_t>(alpha, hash));
-                        combinedHash += hash; // TODO: should I add floats or ints?
-                    } 
-                    // else {
-                    //     // FIXME: This is bug.
-                    //     hashOrderedByCoverage.insert(std::pair<float, uint32_t>(0.f, 0));
-                    // }
-                }
+           //      float combinedHash = 0;
+           //      // two ids per raster == 2*3+first technical raster (all RGBA)
+           //      HashSamples::const_iterator it(hashMap.begin());
+           //      for (uint i =1; i < myRasters.size()*2; ++i, ++it) {
+           //          if (it!=hashMap.end()) {   
+           //              const float alpha = SYSmax(it->second/gaussianNorm, 0.f);
+           //              const float hash = it->first ? alpha != 0.0f: 0;
+           //              hashOrderedByCoverage.insert(std::pair<float, float>(alpha, hash));
+           //              combinedHash += hash; // TODO: should I add floats or ints?
+           //          } 
+           //      }
 
-                // First 'technical' raster RGBA
-                float vals[4];
-                vals[0] = vals[1] = vals[2] = vals[3] = 0.f;
-                vals[0] = hash_to_float(combinedHash); // TODO: ?
-                vals[1] = ((float) ((combinedHash << 8)) /  (float) UINT32_MAX);
-                vals[2] = ((float) ((combinedHash << 16)) / (float) UINT32_MAX);
-                vals[3] = 0.0f;
-                myRasters(0)->setPixelValue(px, py, vals);
+           //      // First 'technical' raster RGBA
+           //      float vals[4];
+           //      vals[0] = vals[1] = vals[2] = vals[3] = 0.f;
+           //      vals[0] = combinedHash; // TODO: ?
+           //      uint32_t s = static_cast<uint32_t>(combinedHash);
+           //      vals[1] = ((float) ((s << 8)) /  (float) UINT32_MAX);
+           //      vals[2] = ((float) ((s << 16)) / (float) UINT32_MAX);
+           //      vals[3] = 0.0f;
+           //      myRasters(0)->setPixelValue(px, py, vals);
 
                 
-                // Then 3 rasters with two mattes each:
-                std::map<float, uint32_t>::const_reverse_iterator jt(hashOrderedByCoverage.rbegin());
-                for (uint i=1; i<myRasters.size(); ++i, ++jt) {
-                    vals[0] = vals[1] = vals[2] = vals[3] = 0.f;
-                    for (uint j=0; j<2; ++j, ++jt) {
-                        if (jt==hashOrderedByCoverage.rend())
-                            break;
-                        float val  = jt->first;
-                        float hash = hash_to_float(jt->second);
-                        vals[2*j]   = hash;
-                        vals[2*j+1] = val;
+           //      // Then 3 rasters with two mattes each:
+           //      std::map<float, uint32_t>::const_reverse_iterator jt(hashOrderedByCoverage.rbegin());
+           //      for (uint i=1; i<myRasters.size(); ++i, ++jt) {
+           //          vals[0] = vals[1] = vals[2] = vals[3] = 0.f;
+           //          for (uint j=0; j<2; ++j, ++jt) {
+           //              if (jt==hashOrderedByCoverage.rend())
+           //                  break;
+           //              float val  = jt->first;
+           //              float hash = hash_to_float(jt->second);
+           //              vals[2*j]   = hash;
+           //              vals[2*j+1] = val;
                         
-                    }
-                    myRasters(i)->setPixelValue(px, py, vals);
-                }
-            }
-
+           //          }
+           //          myRasters(i)->setPixelValue(px, py, vals);
+           //      }
+           //  } // hide symbols
 
             for (int i = 0; i < vectorsize; ++i, ++destination)
                 *destination = sample[i] / gaussianNorm;
