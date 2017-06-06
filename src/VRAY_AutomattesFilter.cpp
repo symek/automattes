@@ -88,53 +88,24 @@ VRAY_AutomatteFilter::addNeededSpecialChannels(VRAY_Imager &imager)
 }
 
 namespace {
-float VRAYcomputeSumX2(int samplesperpixel, float width, int &halfsamplewidth)
-{
-    float sumx2 = 0;
-    if (samplesperpixel & 1 ) {
-        halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width);
-        for (int i = -halfsamplewidth; i <= halfsamplewidth; ++i) {
-            float x = float(i)/float(samplesperpixel);
-            sumx2 += x*x;
-        }
-    } else {
-        halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width + 0.5f);
-        for (int i = -halfsamplewidth; i < halfsamplewidth; ++i) {
-            float x = (float(i)+0.5f)/float(samplesperpixel);
-            sumx2 += x*x;
-        }
+    float VRAYcomputeSumX2(int samplesperpixel, float width, int &halfsamplewidth)
+    {
+      float sumx2 = 0;
+      if (samplesperpixel & 1 ) {
+          halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width);
+          for (int i = -halfsamplewidth; i <= halfsamplewidth; ++i) {
+              float x = float(i)/float(samplesperpixel);
+              sumx2 += x*x;
+          }
+      } else {
+          halfsamplewidth = (int)SYSfloor(float(samplesperpixel)*0.5f*width + 0.5f);
+          for (int i = -halfsamplewidth; i < halfsamplewidth; ++i) {
+              float x = (float(i)+0.5f)/float(samplesperpixel);
+              sumx2 += x*x;
+          }
+      }
+      return sumx2;
     }
-    return sumx2;
-}
-
-
-inline float gaussian(float d, float expv, float alpha)
-{
-    return SYSmax(0.f, float(SYSexp(-alpha*d*d) - expv));
-}
-
-inline float gaussianFilter(float x, float y, float expv, float alpha)
-{
-    return gaussian(x, expv, alpha) * gaussian(y, expv, alpha);
-}
-
-inline void packFloats(const float a, const float b, float &store)
-{
-    const half first = half(a); const half second = half(b);
-    int16_t sh1 = *reinterpret_cast<int16_t*>((void*) &first);
-    int16_t sh2 = *reinterpret_cast<int16_t*>((void*) &second);
-    int32_t tmp = ( sh2 << 16) | sh1;
-          store = *reinterpret_cast<float*>((void*)&(tmp)); 
-}
-
-
-inline void unpackFloats(const float store, float &a, float &b)
-{
-    int16_t unpack16a = *reinterpret_cast<int16_t*>((void*)&store);
-    int16_t unpack16b = *reinterpret_cast<int32_t*>((void*)&store) >> 16;
-    a = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16a));
-    b = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16b));
-}
 
 }
 
@@ -165,35 +136,13 @@ VRAY_AutomatteFilter::filter(
     const VRAY_Imager &imager) const
 {
 
-    const float *const zdata = mySortByPz
-        ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ))
-        : NULL;
+    const float *const colordata = getSampleData(source, channel);
+    const float *const pzdata    = getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ));
 
-    const float *const opiddata = myUseOpID
-        ? getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID))
-        : NULL;
-
-    const float *const colourdata = \
-    getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_CFAF));
-
-    const float * m3hashdata = !myUseOpID
-        ? getChannelIdxByName(imager, myHashChannel)
-        : NULL;
-
-    
-    UT_ASSERT(mySortByPz == (zdata != NULL));
-    UT_ASSERT(myUseOpID == (opiddata != NULL));
-    UT_ASSERT(myUseOpID != (m3hashdata != NULL));
-
-
-    // IMG_DeepPixelWriter writer(*myDsm);
-
-    for (int desty = 0; desty < destheight; ++desty)
+    for (int desty = 0; desty < destheight; ++desty) 
     {
         for (int destx = 0; destx < destwidth; ++destx)
         {
-
-            // Thanks SESI for HDK example...
             // First, compute the sample bounds of the pixel
             const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
             const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
@@ -205,6 +154,7 @@ VRAY_AutomatteFilter::filter(
             // // Find the last sample to read for colour and z gradients
             const int sourcelastox = sourcefirstx + ((mySamplesPerPixelX-1)>>1) + myOpacitySamplesHalfX;
             const int sourcelastoy = sourcefirsty + ((mySamplesPerPixelY-1)>>1) + myOpacitySamplesHalfY;
+
             int sourcefirstrx = sourcefirstox;
             int sourcefirstry = sourcefirstoy;
             int sourcelastrx = sourcelastox;
@@ -213,7 +163,7 @@ VRAY_AutomatteFilter::filter(
             
             UT_StackBuffer<float> sample(vectorsize);
             for (int i = 0; i < vectorsize; ++i)
-                sample[i] = 0;
+                sample[i] = 0.f;
 
             // HashMap hash_map;
             float gaussianNorm = 0;
@@ -235,10 +185,10 @@ VRAY_AutomatteFilter::filter(
                         gaussianNorm += gaussianWeight;
 
                         for (int i = 0; i < vectorsize; ++i) {
-                            sample[i] += gaussianWeight*colourdata[vectorsize*sourceidx+i];
+                            sample[i] += gaussianWeight*colordata[vectorsize*sourceidx+i];
                         }
 
-                        // const float alpha = colourdata[vectorsize*sourceidx+3] * gaussianWeight; // TODO: move to opacitySamples?
+                        // const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; // TODO: move to opacitySamples?
                         // const float hash = m3hashdata[sourceidx];
 
                         // if (hash_map.find(hash) == hash_map.end()) {

@@ -1,5 +1,5 @@
 /*
- Partaly taken from HDK examples:
+ Partialy taken from HDK examples:
  http://www.sidefx.com/docs/hdk15.5/_v_r_a_y_2_v_r_a_y__demo_edge_detect_filter_8h-example.html
 
  Contains snippets from PsyOp
@@ -28,6 +28,30 @@ namespace HA_HDK {
 static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
                                     "CryptoObject01", "CryptoObject02"};
 
+
+inline float gaussian(float d, float expv, float alpha) {
+    return SYSmax(0.f, float(SYSexp(-alpha*d*d) - expv));
+}
+
+inline float gaussianFilter(float x, float y, float expv, float alpha) {
+    return gaussian(x, expv, alpha) * gaussian(y, expv, alpha);
+}
+
+inline void packFloats(const float a, const float b, float &store) {
+    const half first = half(a); const half second = half(b);
+    int16_t sh1 = *reinterpret_cast<int16_t*>((void*) &first);
+    int16_t sh2 = *reinterpret_cast<int16_t*>((void*) &second);
+    int32_t tmp = ( sh2 << 16) | sh1;
+          store = *reinterpret_cast<float*>((void*)&(tmp)); 
+}
+
+inline void unpackFloats(const float store, float &a, float &b) {
+    int16_t unpack16a = *reinterpret_cast<int16_t*>((void*)&store);
+    int16_t unpack16b = *reinterpret_cast<int32_t*>((void*)&store) >> 16;
+    a = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16a));
+    b = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16b));
+}
+
 // From Cryptomatte specification[1]
 float hash_to_float(uint32_t hash)
 {
@@ -43,6 +67,7 @@ float hash_to_float(uint32_t hash)
     std::memcpy(&f, &float_bits, 4);
     return f;
 }
+
 class VRAY_AutomatteFilter : public VRAY_PixelFilter {
 public:
     VRAY_AutomatteFilter();
