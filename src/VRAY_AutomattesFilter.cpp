@@ -136,6 +136,9 @@ VRAY_AutomatteFilter::filter(
     const VRAY_Imager &imager) const
 {
 
+    // It's not technically necessery, but some convention needs to be taken.
+    UT_ASSERT(vectorsize == 4);
+
     const float *const colordata = getSampleData(source, channel);
     const float *const pzdata    = getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ));
 
@@ -165,8 +168,10 @@ VRAY_AutomatteFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0.f;
 
-            // HashMap hash_map;
+            HashMap hash_map;
+            HashMap coverage_map;
             float gaussianNorm = 0;
+
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
             {
                 for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex)
@@ -177,29 +182,65 @@ VRAY_AutomatteFilter::filter(
                     {
 
                         // Find (x,y) of sample relative to *middle* of pixel
-                        const float x = (float(sourcex) - 0.5f*float(sourcelastx + sourcefirstx))/float(mySamplesPerPixelX);
-                        const float y = (float(sourcey) - 0.5f*float(sourcelasty + sourcefirsty))/float(mySamplesPerPixelY);
+                        const float x = (float(sourcex)-0.5f*float(sourcelastx + sourcefirstx))\
+                            / float(mySamplesPerPixelX);
+                        const float y = (float(sourcey)-0.5f*float(sourcelasty + sourcefirsty))\
+                            / float(mySamplesPerPixelY);
 
                         // TODO: remove magic number
-                        const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
+                        const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, \
+                            myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
 
                         for (int i = 0; i < vectorsize; ++i) {
                             sample[i] += gaussianWeight*colordata[vectorsize*sourceidx+i];
                         }
+                        // For now this is our coverage sample (Af), which means 
+                        //  no transparency support with precomposed pixel samples.
+                        const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; 
+                        // R channel of ID export. Not sure atm how to manage three types of IDs /
+                        // We can export from a shader hashes for objects and materiale names,
+                        // groupid doesn't work nor would it have much sense anyway.
+                        const float object_id   = colordata[vectorsize*sourceidx];    // R -> object_id
+                        // const float material_id = colordata[vectorsize*sourceidx+1];  // G -> object_id
 
-                        // const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; // TODO: move to opacitySamples?
-                        // const float hash = m3hashdata[sourceidx];
-
-                        // if (hash_map.find(hash) == hash_map.end()) {
-                        //     hash_map.insert(std::pair<float, float>(hash, alpha)); 
-                        // }
-                        // else {
-                        //     hash_map[hash] += alpha;
-                        // } 
+                        if (hash_map.find(object_id) == hash_map.end()) {
+                            hash_map.insert(std::pair<float, float>(object_id, alpha)); 
+                        }
+                        else {
+                            hash_map[object_id] += alpha;
+                        } 
                     }
                 }
             }
+
+
+            {
+                HashMap::const_reverse_iterator rit(hash_map.rbegin());
+                for (; rit != hash_map.rend(), ++rit) {
+                    const float alpha     = SYSmax(rit->second/gaussianNorm, 0.f);
+                    const float object_id = rit->first ? alpha != 0.0f: 0.f;
+                    coverage_map.insert(std::pair<float, float>(alpha, object_id))
+                }
+            }
+
+
+
+
+
+            
+            
+            for (int i = 0; i < vectorsize; ++i, ++destination)
+                *destination = sample[i] / gaussianNorm;
+           
+        }
+    }
+}
+
+
+
+
+
 
             // const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
             // sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
@@ -255,10 +296,3 @@ VRAY_AutomatteFilter::filter(
            //          myRasters(i)->setPixelValue(px, py, vals);
            //      }
            //  } // hide symbols
-
-            for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = sample[i] / gaussianNorm;
-           
-        }
-    }
-}
