@@ -169,7 +169,6 @@ VRAY_AutomatteFilter::filter(
                 sample[i] = 0.f;
 
             HashMap hash_map;
-            HashMap coverage_map;
             float gaussianNorm = 0;
 
             for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
@@ -216,31 +215,57 @@ VRAY_AutomatteFilter::filter(
 
 
             {
-                HashMap::const_reverse_iterator rit(hash_map.rbegin());
-                for (; rit != hash_map.rend(), ++rit) {
-                    const float alpha     = SYSmax(rit->second/gaussianNorm, 0.f);
-                    const float object_id = rit->first ? alpha != 0.0f: 0.f;
-                    coverage_map.insert(std::pair<float, float>(alpha, object_id))
+                HashMap coverage_map;
+                // sort by coverage (alpha here)
+                HashMap::const_iterator it(hash_map.begin());
+                for(; it != hash_map.end(); ++it) {
+                    const float alpha     = it->second;
+                    const float object_id = it->first;// ? alpha != 0.0f: 0.f;
+                    coverage_map.insert(std::pair<float, float>(alpha, object_id));
                 }
-            }
 
 
+                HashMap::const_reverse_iterator rit(coverage_map.rbegin());
+
+                *destination = rit->first / gaussianNorm;
+                destination++;
+                *destination =rit->second;
+                // rit++;
+                destination++;
+                *destination = sample[2]/ gaussianNorm;;//rit->first / gaussianNorm;
+                destination++;
+                *destination = sample[3]/ gaussianNorm;;//rit->second;
+                destination++;
 
 
+                // for (int i = 0; i < 2; ++rit,/* ++destination,*/ ++i) {
 
-            
-            
-            for (int i = 0; i < vectorsize; ++i, ++destination)
-                *destination = sample[i] / gaussianNorm;
-           
+                //     if (rit == coverage_map.rend())
+                //         break;
+
+                //     const float alpha     = rit->first;
+                //     const float object_id = rit->second;
+
+                //     destination[i] = object_id;
+                //     // destination++;
+                //     destination[++i] = alpha;
+
+                // }   
+            }            
         }
     }
 }
 
 
 
+            // for (int i = 0; i < vectorsize; ++i, ++destination)
+            //     *destination = sample[i] / gaussianNorm;
 
+                //     const float alpha     = SYSmax(rit->second/gaussianNorm, 0.f);
+                //     const float object_id = rit->first ? alpha != 0.0f: 0.f;
+                //     coverage_map.insert(std::pair<float, float>(alpha, object_id));
 
+            
 
             // const int pixelIndex = (destxoffsetinsource + destx*mySamplesPerPixelX) + \
             // sourcewidth*(destyoffsetinsource + desty*mySamplesPerPixelY);
