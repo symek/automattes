@@ -113,7 +113,7 @@ private:
     int myOpacitySamplesHalfY;
 
     // 
-    int myUseOpID;
+    int myOffset; // 0, 1, or 3 for 0-1, 2-3, 4-5 objects in RGBA channels (two object per raster up to 6)
     int myRank;
     int mySortByPz;
 
