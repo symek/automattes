@@ -1,0 +1,7 @@
+# Minimal Automattes Makefile
+INSTDIR = $(HIH)
+SOURCES =  ./src/MurmurHash3.cpp ./src/AutomattesHelper.cpp 
+OPTIMIZER = -O3 -fpermissive
+DSONAME = AutomattesHelper.so 
+# Include HDK Makefile.
+include $(HT)/makefiles/Makefile.gnu
