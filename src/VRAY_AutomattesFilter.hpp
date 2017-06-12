@@ -25,8 +25,8 @@ typedef  std::map<float, float>  HashMap;
 
 namespace HA_HDK {
 
-static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
-                                    "CryptoObject01", "CryptoObject02"};
+// static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
+                                    // "CryptoObject01", "CryptoObject02"};
 
 
 inline float gaussian(float d, float expv, float alpha) {
@@ -113,7 +113,7 @@ private:
     int myOpacitySamplesHalfY;
 
     // 
-    int myOffset; // 0, 1, or 3 for 0-1, 2-3, 4-5 objects in RGBA channels (two object per raster up to 6)
+    int myOffset; // 0: filtered image, 1-3 for 0-1, 2-3, 4-5 objects in RGBA channels (two object per raster up to 6)
     int myRank;
     int mySortByPz;
 

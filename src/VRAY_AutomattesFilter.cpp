@@ -191,9 +191,11 @@ VRAY_AutomatteFilter::filter(
                             myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
 
-                        for (int i = 0; i < vectorsize; ++i) {
-                            sample[i] += gaussianWeight*colordata[vectorsize*sourceidx+i];
-                        }
+                        // for (int i = 0; i < vectorsize; ++i) {
+                        //     const float c = colordata[vectorsize*sourceidx+i];
+                        //     uint seed  = static_cast<const uint>(c);
+                        //     sample[i] += gaussianWeight* SYSfastRandom(seed);
+                        // }
                         // For now this is our coverage sample (Af), which means 
                         //  no transparency support with precomposed pixel samples.
                         const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; 
@@ -202,6 +204,9 @@ VRAY_AutomatteFilter::filter(
                         // groupid doesn't work nor would it have much sense anyway.
                         const float object_id   = colordata[vectorsize*sourceidx];    // R -> object_id
                         // const float material_id = colordata[vectorsize*sourceidx+1];  // G -> object_id
+
+                        uint seed  = static_cast<const uint>(object_id);
+                        sample[1] += gaussianWeight* SYSfastRandom(seed);
 
                         if (hash_map.find(object_id) == hash_map.end()) {
                             hash_map.insert(std::pair<float, float>(object_id, alpha)); 
@@ -219,30 +224,38 @@ VRAY_AutomatteFilter::filter(
             // sort by coverage (alpha here)
             HashMap::const_iterator it(hash_map.begin());
             for(; it != hash_map.end(); ++it) {
-                const float alpha     = it->second / gaussianNorm;
+                const float alpha     = it->second;// / gaussianNorm;
                 const float object_id = it->first;// ? alpha != 0.0f: 0.f;
                 coverage_map.insert(std::pair<float, float>(alpha, object_id));
             }
 
-
-            const size_t id_offset = static_cast<size_t>(myOffset) * 2; 
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
-            std::advance(rit, id_offset);
 
-            for (int i = id_offset; i < 2; ++rit,  ++i) {
-                if (rit == coverage_map.rend()) {
-                    destination += i*2;
-                    break;
+            if (myOffset == 0) {
+                sample[2] = rit->second * gaussianNorm;
+                for (int i = 0; i< 4; ++i, ++destination) {
+                    *destination  = sample[i] / gaussianNorm; 
                 }
-                destination[0] = rit->second; // object_id
-                destination[1] = rit->first; // alpha
-                destination += 2;
-            }   
+                    
+            } else {
+        
+                const size_t id_offset = (static_cast<size_t>(myOffset) - 1) * 2; 
+                std::advance(rit, id_offset);
+
+                for (int i = id_offset; i < 2; ++rit,  ++i) {
+                    if (rit == coverage_map.rend()) {
+                        destination += i*2;
+                        break;
+                    }
+                    destination[0] = rit->second; // object_id
+                    destination[1] = rit->first / gaussianNorm; // alpha
+                    destination += 2;
+                }   
                        
+            }
         }
     }
 }
 
 
 
-          
