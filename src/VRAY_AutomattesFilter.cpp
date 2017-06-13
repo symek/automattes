@@ -191,11 +191,14 @@ VRAY_AutomatteFilter::filter(
                             myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
 
-                        // for (int i = 0; i < vectorsize; ++i) {
-                        //     const float c = colordata[vectorsize*sourceidx+i];
-                        //     uint seed  = static_cast<const uint>(c);
-                        //     sample[i] += gaussianWeight* SYSfastRandom(seed);
-                        // }
+                       
+                        const float c = colordata[vectorsize*sourceidx];
+                        uint seed = static_cast<const uint>(c);
+                        sample[0] += gaussianWeight * SYSfastRandom(seed);
+                             seed += 2345;
+                        sample[1] += gaussianWeight * SYSfastRandom(seed); 
+                        
+
                         // For now this is our coverage sample (Af), which means 
                         //  no transparency support with precomposed pixel samples.
                         const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; 
@@ -204,9 +207,6 @@ VRAY_AutomatteFilter::filter(
                         // groupid doesn't work nor would it have much sense anyway.
                         const float object_id   = colordata[vectorsize*sourceidx];    // R -> object_id
                         // const float material_id = colordata[vectorsize*sourceidx+1];  // G -> object_id
-
-                        uint seed  = static_cast<const uint>(object_id);
-                        sample[1] += gaussianWeight* SYSfastRandom(seed);
 
                         if (hash_map.find(object_id) == hash_map.end()) {
                             hash_map.insert(std::pair<float, float>(object_id, alpha)); 
@@ -217,8 +217,6 @@ VRAY_AutomatteFilter::filter(
                     }
                 }
             }
-
-
             
             HashMap coverage_map;
             // sort by coverage (alpha here)
@@ -232,7 +230,7 @@ VRAY_AutomatteFilter::filter(
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
 
             if (myOffset == 0) {
-                sample[2] = rit->second * gaussianNorm;
+                sample[2] = rit->second;
                 for (int i = 0; i< 4; ++i, ++destination) {
                     *destination  = sample[i] / gaussianNorm; 
                 }
