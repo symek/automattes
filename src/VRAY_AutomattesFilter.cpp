@@ -201,7 +201,8 @@ VRAY_AutomatteFilter::filter(
 
                         // For now this is our coverage sample (Af), which means 
                         //  no transparency support with precomposed pixel samples.
-                        const float alpha = colordata[vectorsize*sourceidx+3] * gaussianWeight; 
+                        // colordata[vectorsize*sourceidx+3]
+                        const float alpha = 1.f * gaussianWeight; 
                         // R channel of ID export. Not sure atm how to manage three types of IDs /
                         // We can export from a shader hashes for objects and materiale names,
                         // groupid doesn't work nor would it have much sense anyway.
@@ -246,7 +247,7 @@ VRAY_AutomatteFilter::filter(
                         break;
                     }
                     destination[0] = rit->second; // object_id
-                    destination[1] = rit->first / gaussianNorm; // alpha
+                    destination[1] = rit->first / (gaussianNorm); // alpha
                     destination += 2;
                 }   
                        
