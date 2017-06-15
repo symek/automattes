@@ -33,7 +33,6 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     : mySamplesPerPixelX(1) 
     , mySamplesPerPixelY(1) 
     , mySortByPz(1)
-    , myOffset(0)
     , myFilterWidth(2)
     , myGaussianAlpha(1)
     , myGaussianExp(0)
@@ -63,10 +62,10 @@ VRAY_AutomatteFilter::setArgs(int argc, const char *const argv[])
 {
     UT_Args args;
     args.initialize(argc, argv);
-    args.stripOptions("w:o:");
+    args.stripOptions("w:r:");
 
     if (args.found('w')) { myFilterWidth = args.fargp('w'); }
-    if (args.found('o')) { myOffset      = args.fargp('o'); }
+    if (args.found('r')) { myRank        = args.fargp('r'); }
     // if (args.found('h')) { myHashChannel = args.argp('h'); }
 }
 
@@ -230,7 +229,7 @@ VRAY_AutomatteFilter::filter(
 
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
 
-            if (myOffset == 0) {
+            if (myRank == 0) {
                 sample[2] = rit->second;
                 for (int i = 0; i< 4; ++i, ++destination) {
                     *destination  = sample[i] / gaussianNorm; 
@@ -238,7 +237,7 @@ VRAY_AutomatteFilter::filter(
                     
             } else {
         
-                const size_t id_offset = (static_cast<size_t>(myOffset) - 1) * 2; 
+                const size_t id_offset = (static_cast<size_t>(myRank) - 1) * 2; 
                 std::advance(rit, id_offset);
 
                 for (int i = id_offset; i < 2; ++rit,  ++i) {
