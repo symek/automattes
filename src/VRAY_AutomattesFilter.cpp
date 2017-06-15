@@ -37,8 +37,8 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     , myGaussianAlpha(1)
     , myGaussianExp(0)
     , myRank(0)
-    , myHashTypeName("mantra")
-    , myHashType(MANTRA)
+    , myHashTypeName("crypto")
+    , myHashType(CRYPTO)
     , myIdTypeName("object")
     , myIdType(OBJECT)
 {
@@ -91,8 +91,6 @@ VRAY_AutomatteFilter::setArgs(int argc, const char *const argv[])
         else if (std::string(myIdTypeName).compare("group") == 0)
             myIdType = Automatte_IdType::GROUP;
     }
-    std::cout << myHashTypeName << myHashType << "\n";
-    std::cout << myIdTypeName << myIdType << "\n";
 
 }
 
@@ -273,7 +271,7 @@ VRAY_AutomatteFilter::filter(
 
             if (myRank == 0) {
                 sample[2] = rit->second;
-                for (int i = 0; i< 4; ++i, ++destination) {
+                for (int i = 0; i< vectorsize; ++i, ++destination) {
                     *destination  = sample[i] / gaussianNorm; 
                 }
                     
