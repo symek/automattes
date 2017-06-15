@@ -12,11 +12,12 @@
 #include <PXL/PXL_Raster.h>
 #include <PXL/PXL_DeepSampleList.h>
 
-#include "VRAY_AutomattesFilter.hpp"
 
 #include <iostream>
 #include <map>
+#include <unordered_map>
 
+#include "VRAY_AutomattesFilter.hpp"
 
 using namespace HA_HDK;
 
@@ -147,9 +148,6 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
-    // select hash type (builtin Mantra hashes or mumurhash)
-    
-
 }
 
 void
@@ -176,7 +174,11 @@ VRAY_AutomatteFilter::filter(
         getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
     const float *const Material_ids = (myHashType == MANTRA) ? \
         getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
-    
+
+     // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
+     // * - not supported yet.
+
+    const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
     for (int desty = 0; desty < destheight; ++desty) 
     {
@@ -226,33 +228,31 @@ VRAY_AutomatteFilter::filter(
                         const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, \
                             myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
-
-                       
-                        const float c = (myHashType == MANTRA) ? \
-                            Object_ids[sourceidx] : colordata[vectorsize*sourceidx];
-
-                        uint seed = static_cast<const uint>(c);
-                        sample[0] += gaussianWeight * SYSfastRandom(seed);
-                             seed += 2345;
-                        sample[1] += gaussianWeight * SYSfastRandom(seed); 
                         
 
                         // For now this is our coverage sample, which means 
-                        //  no transparency support with precomposed pixel samples.
+                        // no transparency support (because of precomposed shader samples).
                         // thus we can assume 1 instead of sampling alphs / opacity.
                         const float coverage = 1.f * gaussianWeight; //fixme
 
                         // This is ugly, fixme
                         const float object_id   = (myHashType == MANTRA) ? \
-                            Object_ids[sourceidx] : colordata[vectorsize*sourceidx];    // R -> object_id
+                            Object_ids[sourceidx] : colordata[vectorsize*sourceidx+hash_index];    // G -> object_id
                         const float material_id = (myHashType == MANTRA) ? \
-                            Material_ids[sourceidx] : colordata[vectorsize*sourceidx+1];  // G -> material_id
+                            Material_ids[sourceidx] : colordata[vectorsize*sourceidx+hash_index];  // B -> material_id
+
+                        const float _id = (myIdType == OBJECT) ? object_id : material_id; 
+
+                        uint seed  = static_cast<uint>(_id);
+                        sample[1] += gaussianWeight * SYSfastRandom(seed);
+                             seed += 2345;
+                        sample[2] += gaussianWeight * SYSfastRandom(seed); 
 
                         if (hash_map.find(object_id) == hash_map.end()) {
-                            hash_map.insert(std::pair<float, float>(object_id, coverage)); 
+                            hash_map.insert(std::pair<float, float>(_id, coverage));
                         }
                         else {
-                            hash_map[object_id] += coverage;
+                            hash_map[object_id]   += coverage;
                         } 
                     }
                 }
@@ -270,7 +270,7 @@ VRAY_AutomatteFilter::filter(
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
 
             if (myRank == 0) {
-                sample[2] = rit->second;
+                //sample[2] = rit->second;
                 for (int i = 0; i< vectorsize; ++i, ++destination) {
                     *destination  = sample[i] / gaussianNorm; 
                 }
@@ -286,7 +286,7 @@ VRAY_AutomatteFilter::filter(
                         break;
                     }
                     destination[0] = rit->second; // object_id
-                    destination[1] = rit->first / (gaussianNorm); // coverage
+                    destination[1] = rit->first / gaussianNorm; // coverage
                     destination += 2;
                 }   
                        
