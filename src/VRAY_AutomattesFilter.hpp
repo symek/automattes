@@ -28,6 +28,18 @@ namespace HA_HDK {
 // static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
                                     // "CryptoObject01", "CryptoObject02"};
 
+enum Automatte_HashType {
+    MANTRA,
+    CRYPTO
+};
+
+
+enum Automatte_IdType {
+    ASSET, // not supported yet
+    OBJECT,
+    MATERIAL,
+    GROUP // not supported yet
+};
 
 inline float gaussian(float d, float expv, float alpha) {
     return SYSmax(0.f, float(SYSexp(-alpha*d*d) - expv));
@@ -112,8 +124,16 @@ private:
     int myOpacitySamplesHalfX;
     int myOpacitySamplesHalfY;
 
-    // 
-    int myRank; // 0: filtered image, 1-3 for 0-1, 2-3, 4-5 objects in RGBA channels (two object per raster up to 6)
+    // 0: filtered pseudo color, 
+    // 1: for 0-1 ranks, 2: 2-3 and so on...
+    int myRank; 
+
+    const char* myIdTypeName;    // user string flag 
+    Automatte_IdType myIdType;   // corresponding enumerator.
+
+    const char* myHashTypeName;  // user string flag 
+    Automatte_HashType myHashType; // corresponding enumerator.
+
     int mySortByPz;
 
     // Filter width (default 2)
@@ -121,7 +141,6 @@ private:
     //  Gaussians parms
     float myGaussianExp;
     float myGaussianAlpha;
-    const char* myHashChannel;
 
 
 };

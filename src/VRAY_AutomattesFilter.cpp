@@ -37,7 +37,10 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
     , myGaussianAlpha(1)
     , myGaussianExp(0)
     , myRank(0)
-    , myHashChannel("m3hash")
+    , myHashTypeName("mantra")
+    , myHashType(MANTRA)
+    , myIdTypeName("object")
+    , myIdType(OBJECT)
 {
 
 }
@@ -62,11 +65,35 @@ VRAY_AutomatteFilter::setArgs(int argc, const char *const argv[])
 {
     UT_Args args;
     args.initialize(argc, argv);
-    args.stripOptions("w:r:");
+    args.stripOptions("w:r:i:h:");
 
     if (args.found('w')) { myFilterWidth = args.fargp('w'); }
     if (args.found('r')) { myRank        = args.fargp('r'); }
-    // if (args.found('h')) { myHashChannel = args.argp('h'); }
+
+    // hash type
+    if (args.found('h')) { 
+        myHashTypeName = args.argp('h'); 
+        if (std::string(myHashTypeName).compare("mantra") == 0)
+            myHashType = Automatte_HashType::MANTRA;
+         else 
+            myHashType = Automatte_HashType::CRYPTO;
+    }
+
+    // id type
+    if (args.found('i')) { 
+        myIdTypeName  = args.argp('i');
+        if (std::string(myIdTypeName).compare("asset") == 0)
+            myIdType = Automatte_IdType::ASSET;
+        else if (std::string(myIdTypeName).compare("object") == 0)
+            myIdType = Automatte_IdType::OBJECT;
+        else if (std::string(myIdTypeName).compare("material") == 0)
+            myIdType = Automatte_IdType::MATERIAL;
+        else if (std::string(myIdTypeName).compare("group") == 0)
+            myIdType = Automatte_IdType::GROUP;
+    }
+    std::cout << myHashTypeName << myHashType << "\n";
+    std::cout << myIdTypeName << myIdType << "\n";
+
 }
 
 void
@@ -80,8 +107,12 @@ VRAY_AutomatteFilter::getFilterWidth(float &x, float &y) const
 void
 VRAY_AutomatteFilter::addNeededSpecialChannels(VRAY_Imager &imager)
 {
-    // if (myUseOpID)
-    //     addSpecialChannel(imager, VRAY_SPECIAL_OPID);
+    
+    if (myHashType == MANTRA) {
+        addSpecialChannel(imager, VRAY_SPECIAL_OPID);
+        addSpecialChannel(imager, VRAY_SPECIAL_MATERIALID);
+    }
+
     addSpecialChannel(imager, VRAY_SPECIAL_PZ);
 
 }
@@ -118,6 +149,9 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
+    // select hash type (builtin Mantra hashes or mumurhash)
+    
+
 }
 
 void
@@ -139,7 +173,12 @@ VRAY_AutomatteFilter::filter(
     UT_ASSERT(vectorsize == 4);
 
     const float *const colordata = getSampleData(source, channel);
-    // const float *const pzdata    = getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_PZ));
+
+    const float *const Object_ids  = (myHashType == MANTRA) ? \
+        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
+    const float *const Material_ids = (myHashType == MANTRA) ? \
+        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
+    
 
     for (int desty = 0; desty < destheight; ++desty) 
     {
@@ -191,40 +230,43 @@ VRAY_AutomatteFilter::filter(
                         gaussianNorm += gaussianWeight;
 
                        
-                        const float c = colordata[vectorsize*sourceidx];
+                        const float c = (myHashType == MANTRA) ? \
+                            Object_ids[sourceidx] : colordata[vectorsize*sourceidx];
+
                         uint seed = static_cast<const uint>(c);
                         sample[0] += gaussianWeight * SYSfastRandom(seed);
                              seed += 2345;
                         sample[1] += gaussianWeight * SYSfastRandom(seed); 
                         
 
-                        // For now this is our coverage sample (Af), which means 
+                        // For now this is our coverage sample, which means 
                         //  no transparency support with precomposed pixel samples.
-                        // colordata[vectorsize*sourceidx+3]
-                        const float alpha = 1.f * gaussianWeight; 
-                        // R channel of ID export. Not sure atm how to manage three types of IDs /
-                        // We can export from a shader hashes for objects and materiale names,
-                        // groupid doesn't work nor would it have much sense anyway.
-                        const float object_id   = colordata[vectorsize*sourceidx];    // R -> object_id
-                        // const float material_id = colordata[vectorsize*sourceidx+1];  // G -> object_id
+                        // thus we can assume 1 instead of sampling alphs / opacity.
+                        const float coverage = 1.f * gaussianWeight; //fixme
+
+                        // This is ugly, fixme
+                        const float object_id   = (myHashType == MANTRA) ? \
+                            Object_ids[sourceidx] : colordata[vectorsize*sourceidx];    // R -> object_id
+                        const float material_id = (myHashType == MANTRA) ? \
+                            Material_ids[sourceidx] : colordata[vectorsize*sourceidx+1];  // G -> material_id
 
                         if (hash_map.find(object_id) == hash_map.end()) {
-                            hash_map.insert(std::pair<float, float>(object_id, alpha)); 
+                            hash_map.insert(std::pair<float, float>(object_id, coverage)); 
                         }
                         else {
-                            hash_map[object_id] += alpha;
+                            hash_map[object_id] += coverage;
                         } 
                     }
                 }
             }
             
             HashMap coverage_map;
-            // sort by coverage (alpha here)
+            // sort by coverage 
             HashMap::const_iterator it(hash_map.begin());
             for(; it != hash_map.end(); ++it) {
-                const float alpha     = it->second;// / gaussianNorm;
-                const float object_id = it->first;// ? alpha != 0.0f: 0.f;
-                coverage_map.insert(std::pair<float, float>(alpha, object_id));
+                const float coverage  = it->second;// / gaussianNorm;
+                const float object_id = it->first;// ? coverage != 0.0f: 0.f;
+                coverage_map.insert(std::pair<float, float>(coverage, object_id));
             }
 
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
@@ -246,7 +288,7 @@ VRAY_AutomatteFilter::filter(
                         break;
                     }
                     destination[0] = rit->second; // object_id
-                    destination[1] = rit->first / (gaussianNorm); // alpha
+                    destination[1] = rit->first / (gaussianNorm); // coverage
                     destination += 2;
                 }   
                        
