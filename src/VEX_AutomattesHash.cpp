@@ -77,7 +77,7 @@ static void vex_store_save(int argc, void *argv[], void *data)
     const VEXfloat *id     = (const VEXfloat*) argv[3];
     const VEXfloat *Af     = (const VEXfloat*) argv[4];
 
-    OpacitySample sample = {P->x(), P->y(), P->z(), *id, *Af};
+    Sample sample = {P->x(), P->y(), P->z(), *id, *Af};
     *result = VEX_Samples_insert(*handle, sample);
 }
 
