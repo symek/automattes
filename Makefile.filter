@@ -2,6 +2,8 @@
 INSTDIR = $(HIH)
 SOURCES =  ./src/MurmurHash3.cpp ./src/VRAY_AutomattesFilter.cpp 
 OPTIMIZER = -O3 -fpermissive
+LIBDIRS = -L$(HIH)/dso -Wl,-rpath="./"
+LIBS    = -lAutomattesHelper
 DSONAME = VRAY_AutomattesFilter.so
 # Include HDK Makefile.
 include $(HT)/makefiles/Makefile.gnu
