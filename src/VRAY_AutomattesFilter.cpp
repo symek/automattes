@@ -11,6 +11,7 @@
 #include <IMG/IMG_File.h>
 #include <PXL/PXL_Raster.h>
 #include <PXL/PXL_DeepSampleList.h>
+#include <UT/UT_Thread.h>
 
 
 #include <iostream>
@@ -18,6 +19,7 @@
 #include <unordered_map>
 
 #include "VRAY_AutomattesFilter.hpp"
+#include "AutomattesHelper.hpp"
 
 using namespace HA_HDK;
 
@@ -148,6 +150,8 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
+    VEX_Samples * samples = VEX_Samples_get();
+    std::cout << "Filter: " << samples << std::endl;
 }
 
 void
@@ -167,6 +171,14 @@ VRAY_AutomatteFilter::filter(
 
     // It's not technically necessery, but some convention needs to be taken.
     UT_ASSERT(vectorsize == 4);
+    
+    VEX_Samples * samples = VEX_Samples_get();
+    const int thread_id = UT_Thread::getMyThreadId();
+    VEX_Samples::const_iterator it = samples->find(thread_id);
+    if (it != samples->end()) {
+        // it-second.s
+        it->second.clear();
+    }
 
     const float *const colordata = getSampleData(source, channel);
 
@@ -177,7 +189,6 @@ VRAY_AutomatteFilter::filter(
 
      // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
      // * - not supported yet.
-
     const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
     for (int desty = 0; desty < destheight; ++desty) 

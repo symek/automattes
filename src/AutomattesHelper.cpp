@@ -14,30 +14,35 @@
 
 namespace HA_HDK {
 
+// used only for creating per thread storage
 static std::mutex automattes_mutex;
-static std::map<int, OpacitySamples> AutoSampleStore;
+// our main storage
+static VEX_Samples vexsamples;
 
-
-const int create_shader(const char* filename, const VEXfloat uscale, 
-                        const VEXfloat vscale, const VEXfloat intensity, 
-                        const VEXint realuv)
+int VEX_Samples_create(const int& thread_id)
 {
     std::lock_guard<std::mutex> guard(automattes_mutex);
-
-
-    std::map<int, AutoSampleStore>::const_iterator it;
-
-    it = AutoSampleStore.find(hash);
-    if (it == AutoSampleStore.end()) {
-        OpacitySamples samples;
-    	
-        // shader.intersection = &tlIntersectionData(); //make_unique<tlIntersectionData>();
-        // IrawanStore.insert(std::pair<int, IrawanInstance>(hash, shader));
-
-    //     return hash;
-    // } else {
-    //     return it->first;
+    VEX_Samples::const_iterator it = vexsamples.find(thread_id);
+    if(it == vexsamples.end()) {
+    	SampleBucket bucket;	
+    	vexsamples.insert(std::pair<int, SampleBucket>(thread_id, bucket));
     }
+    // std::cout << "Helper: " << &vexsamples << std::endl;
+    return thread_id;
+} 
+
+int VEX_Samples_insert(const int& thread_id, const OpacitySample& sample)
+{
+	VEX_Samples::const_iterator it = vexsamples.find(thread_id);
+	UT_ASSERT(it != vexsamples.end());
+	vexsamples[thread_id].push_back(sample);
+	return vexsamples[thread_id].size(); //thread_id;
 }
+
+VEX_Samples * VEX_Samples_get() {
+	return &vexsamples;
+}
+
+
 
 } // end of HA_HDK

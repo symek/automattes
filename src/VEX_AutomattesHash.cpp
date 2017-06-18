@@ -5,7 +5,9 @@
  Contains snippets from PsyOp
  [1] - Jonah Friedman, Andrew C. Jones, Fully automatic ID mattes with support for motion blur and transparency.
  */
-
+#include <functional>
+#include <memory>
+#include <map>
  
 
 #include <UT/UT_DSOVersion.h>
@@ -15,6 +17,7 @@
 #include <cstring>
 
 #include "MurmurHash3.h"
+#include "AutomattesHelper.hpp"
 
 namespace HA_HDK {
 
@@ -56,7 +59,31 @@ murmurhash3I(int argc,  void *argv[], void *data)
     *result = (m3hash != background) ? m3hash : 0;
 }
 
+static void vex_store_open(int argc, void *argv[], void *data)
+{
+    int            *result    = (int*)            argv[0];
+    const char     *channel   = (const char*)     argv[1];
+
+    const int thread_id = UT_Thread::getMyThreadId();
+    result[0] = VEX_Samples_create(thread_id);
+
 }
+
+static void vex_store_save(int argc, void *argv[], void *data)
+{
+          VEXint   *result = (      VEXint* )  argv[0];
+    const VEXint   *handle = (const VEXint* )  argv[1];
+    const VEXvec3  *P      = (const VEXvec3*)  argv[2];
+    const VEXfloat *id     = (const VEXfloat*) argv[3];
+    const VEXfloat *Af     = (const VEXfloat*) argv[4];
+
+    OpacitySample sample = {P->x(), P->y(), P->z(), *id, *Af};
+    *result = VEX_Samples_insert(*handle, sample);
+}
+
+}// end of HA_HDK namespace
+
+
 
 //
 // Installation function
@@ -73,12 +100,27 @@ newVEXOp(void *)
         VEX_OPTIMIZE_2, // Optimization level
         true);    
 
-     new VEX_VexOp("murmurhash3@&IS",  // Signature
+    new VEX_VexOp("murmurhash3@&IS",  // Signature
         murmurhash3I,      // Evaluator
         VEX_ALL_CONTEXT,    // Context mask
         NULL,           // init function
         NULL,           // cleanup function
         VEX_OPTIMIZE_2, // Optimization level
-        true);    
+        true);
+
+    new VEX_VexOp("vexstoreopen@&IS",  // Signature
+        vex_store_open,      // Evaluator
+        VEX_ALL_CONTEXT,    // Context mask
+        NULL,           // init function
+        NULL,           // cleanup function
+        VEX_OPTIMIZE_2 // Optimization level
+        );
+     new VEX_VexOp("vexstoresave@&IIVFF",  // Signature
+        vex_store_save,      // Evaluator
+        VEX_ALL_CONTEXT,    // Context mask
+        NULL,           // init function
+        NULL,           // cleanup function
+        VEX_OPTIMIZE_2, // Optimization level
+        true);           
     
 }
