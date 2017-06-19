@@ -14,7 +14,12 @@ typedef std::map<int, SampleBucket> VEX_Samples;
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
 // tmp
 static constexpr const int& size_at_least = 16*16*3*3;
-// function exposed on vex side
+
+// pointgrid stuff useful for buliding filter side accesor.
+typedef  UT_PointGridVector3ArrayAccessor<int, int> UT_Vector3Point;
+typedef  UT_PointGrid<UT_Vector3Point>::queuetype UT_Vector3PointQueue;
+
+// function exposed on vex side (temporarily instead of proper class)
 int VEX_Samples_create(const int&);
 int VEX_Samples_insert(const int&, const Sample&);
 VEX_Samples * VEX_Samples_get();
