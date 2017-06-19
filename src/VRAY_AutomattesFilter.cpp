@@ -180,6 +180,10 @@ VRAY_AutomatteFilter::filter(
         it->second.clear();
     }
 
+
+    DEBUG_PRINT("data: %d, %d, %d, %d, %d, %d\n", \
+       sourcewidth, sourceheight, destwidth, destheight, destxoffsetinsource, destyoffsetinsource);
+
     const float *const colordata = getSampleData(source, channel);
 
     const float *const Object_ids  = (myHashType == MANTRA) ? \

@@ -14,6 +14,8 @@
 #include <VRAY/VRAY_PixelFilter.h>
 #include <VRAY/VRAY_Procedural.h>
 
+#define DEBUG
+
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
 #else
