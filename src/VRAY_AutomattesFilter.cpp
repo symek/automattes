@@ -12,6 +12,7 @@
 #include <PXL/PXL_Raster.h>
 #include <PXL/PXL_DeepSampleList.h>
 #include <UT/UT_Thread.h>
+#include <UT/UT_PointGrid.h>
 
 
 #include <iostream>
@@ -171,13 +172,34 @@ VRAY_AutomatteFilter::filter(
 
     // It's not technically necessery, but some convention needs to be taken.
     UT_ASSERT(vectorsize == 4);
-    
+
     VEX_Samples * samples = VEX_Samples_get();
     const int thread_id = UT_Thread::getMyThreadId();
     VEX_Samples::const_iterator it = samples->find(thread_id);
     if (it != samples->end()) {
-        // it-second.s
-        it->second.clear();
+        SampleBucket bucket = it->second;
+        DEBUG_PRINT("%d, %d", &(it->second), &bucket);
+        const size_t size = bucket.size();
+        UT_Vector3Array  positions(size);
+        UT_ValArray<int> indices(size);
+        for (int i=0; i<size; ++i) {
+            const Sample sample = bucket[i];
+            const UT_Vector3 pos(sample[0], sample[1], sample[2]);
+            positions.append(pos);
+            indices.append(i);
+        }
+
+        // Point Grid structures/objects:
+        UT_Vector3Point accessor(positions, indices);
+        UT_PointGrid<UT_Vector3Point> pointgrid(accessor);
+
+        if (pointgrid.canBuild(destwidth, destheight, 1)) {
+            // Build it:
+            // pointgrid.build(bbox.minvec(), bbox.size(), res, res, res);
+            DEBUG_PRINT("%s", "can");
+        }
+        // clear storage for actual bucket leaving memory allocated for another one.
+        bucket.clear();
     }
 
 
