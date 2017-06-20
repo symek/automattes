@@ -18,6 +18,7 @@
 #include <iostream>
 #include <map>
 #include <unordered_map>
+#include <memory>
 
 #include "VRAY_AutomattesFilter.hpp"
 #include "AutomattesHelper.hpp"
@@ -151,8 +152,8 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myOpacitySumY2 = VRAYcomputeSumX2(mySamplesPerPixelY, myFilterWidth, myOpacitySamplesHalfY);
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 
-    VEX_Samples * samples = VEX_Samples_get();
-    std::cout << "Filter: " << samples << std::endl;
+    // VEX_Samples * samples = VEX_Samples_get();
+    // std::cout << "Filter: " << samples << std::endl;
 }
 
 void
@@ -173,41 +174,58 @@ VRAY_AutomatteFilter::filter(
     // It's not technically necessery, but some convention needs to be taken.
     UT_ASSERT(vectorsize == 4);
 
+    // temporarly to test vex->filter passing.
+    #if 1
+
+    std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     VEX_Samples * samples = VEX_Samples_get();
+    // std::cout << "Filter: " << samples << "\n";
     const int thread_id = UT_Thread::getMyThreadId();
     VEX_Samples::const_iterator it = samples->find(thread_id);
+    bool use_vex_samples = false;
+
     if (it != samples->end()) {
-        SampleBucket bucket = it->second;
-        DEBUG_PRINT("%d, %d", &(it->second), &bucket);
+        SampleBucket & bucket = samples->at(thread_id);
         const size_t size = bucket.size();
+        UT_Vector3 bucket_min = {0,0,0};
+        UT_Vector3 bucket_max = {0,0,0};
+
         UT_Vector3Array  positions(size);
         UT_ValArray<int> indices(size);
         for (int i=0; i<size; ++i) {
             const Sample sample = bucket[i];
             const UT_Vector3 pos(sample[0], sample[1], sample[2]);
+            bucket_min = SYSmin(pos, bucket_min);
+            bucket_max = SYSmax(pos, bucket_max);
             positions.append(pos);
             indices.append(i);
         }
 
         // Point Grid structures/objects:
         UT_Vector3Point accessor(positions, indices);
-        UT_PointGrid<UT_Vector3Point> pointgrid(accessor);
+        pixelgrid = std::unique_ptr<UT_PointGrid<UT_Vector3Point>>\
+            (new UT_PointGrid<UT_Vector3Point> (accessor));
 
-        if (pointgrid.canBuild(destwidth, destheight, 1)) {
+        const UT_Vector3 bucket_size(bucket_max - bucket_min);
+
+        if (pixelgrid->canBuild(destwidth, destheight, 1)) {
             // Build it:
-            // pointgrid.build(bbox.minvec(), bbox.size(), res, res, res);
-            DEBUG_PRINT("%s", "can");
+            pixelgrid->build(bucket_min, bucket_size, destwidth, destheight, 1);
+            use_vex_samples = true;
+            DEBUG_PRINT("%s", "can build.\n");
+        
         }
         // clear storage for actual bucket leaving memory allocated for another one.
-        bucket.clear();
+        // bucket.clear();
+        // std::cout << "bucket.size() before: " <<  size << " and after: " << bucket.size() << "\n"; 
+        // DEBUG_PRINT("size after clear: %d", bucket.size());
     }
+    
+    #endif
 
-
-    DEBUG_PRINT("data: %d, %d, %d, %d, %d, %d\n", \
-       sourcewidth, sourceheight, destwidth, destheight, destxoffsetinsource, destyoffsetinsource);
+    // DEBUG_PRINT("data: %d, %d, %d, %d, %d, %d\n", sourcewidth, sourceheight, destwidth, destheight, destxoffsetinsource, destyoffsetinsource);
 
     const float *const colordata = getSampleData(source, channel);
-
     const float *const Object_ids  = (myHashType == MANTRA) ? \
         getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
     const float *const Material_ids = (myHashType == MANTRA) ? \
@@ -242,6 +260,41 @@ VRAY_AutomatteFilter::filter(
             UT_StackBuffer<float> sample(vectorsize);
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0.f;
+
+            #if 1
+            // temporarly to test vex->filter passing.
+            if (use_vex_samples) {
+                UT_Vector3PointQueue *queue;
+                queue = pixelgrid->createQueue();
+                UT_PointGridIterator<UT_Vector3Point> iter;
+                iter = pixelgrid->getKeysAt(destx, desty, 0, *queue);
+                SampleBucket & bucket = samples->at(thread_id);
+
+                UT_Vector3 color = {0.2f, 0.4f, 0.6f};
+                float alpha = 0.f;
+                if (iter.entries() != 0) {
+                    std::cout << iter.entries() << "\n";
+                    for (;!iter.atEnd(); iter.advance()) {
+                        const int idx = iter.getValue();
+                        const Sample vexsample = bucket[idx]; //something wrong is here.
+                        color += UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
+                        alpha += vexsample[4];
+                    }
+                }
+
+                // color /= iter.entries();
+                // alpha /= iter.entries();
+                sample[0] = color.x();
+                sample[1] = color.y();
+                sample[2] = color.z();
+                sample[3] = alpha;
+                pixelgrid->destroyQueue(queue);
+                bucket.clear();
+            }
+
+            #endif
+
+
 
             HashMap hash_map;
             float gaussianNorm = 0;
@@ -280,10 +333,13 @@ VRAY_AutomatteFilter::filter(
 
                         const float _id = (myIdType == OBJECT) ? object_id : material_id; 
 
-                        uint seed  = static_cast<uint>(_id);
-                        sample[1] += gaussianWeight * SYSfastRandom(seed);
-                             seed += 2345;
-                        sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                        // temporarly to test vex->filter passing.
+                        if (!use_vex_samples) {
+                            uint seed  = static_cast<uint>(_id);
+                            sample[1] += gaussianWeight * SYSfastRandom(seed);
+                                 seed += 2345;
+                            sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                        }
 
                         if (hash_map.find(object_id) == hash_map.end()) {
                             hash_map.insert(std::pair<float, float>(_id, coverage));
