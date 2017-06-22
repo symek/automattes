@@ -13,7 +13,7 @@
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
 #include <VEX/VEX_VexOp.h>
-
+#include <UT/UT_PointGrid.h>
 #include <cstring>
 
 #include "MurmurHash3.h"
@@ -77,7 +77,9 @@ static void vex_store_save(int argc, void *argv[], void *data)
     const VEXfloat *id     = (const VEXfloat*) argv[3];
     const VEXfloat *Af     = (const VEXfloat*) argv[4];
 
-    Sample sample = {P->x(), P->y(), P->z(), *id, *Af};
+    const int thread_id = UT_Thread::getMyThreadId();
+    const float thf = static_cast<float>(thread_id);
+    Sample sample = {P->x(), P->y(), P->z(), *id, *Af, thf};
     *result = VEX_Samples_insert(*handle, sample);
 }
 

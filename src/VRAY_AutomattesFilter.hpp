@@ -15,6 +15,7 @@
 #include <VRAY/VRAY_Procedural.h>
 
 #define DEBUG
+#define VEXSAMPLES
 
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
