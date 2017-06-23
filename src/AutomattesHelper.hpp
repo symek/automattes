@@ -9,7 +9,9 @@ typedef std::vector<float> Sample;
 // vector of samples per thread (reused by many buckets)
 typedef std::vector<Sample> SampleBucket;
 // storage per channel.
-typedef std::map<int, SampleBucket> VEX_Samples;
+typedef std::vector<SampleBucket>BucketQueue;
+typedef std::map<int, BucketQueue> VEX_Samples;
+typedef std::map<int, int> BucketCounter;
 // main storage container.
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
 // tmp
@@ -23,6 +25,7 @@ typedef  UT_PointGrid<UT_Vector3Point>::queuetype UT_Vector3PointQueue;
 int VEX_Samples_create(const int&);
 int VEX_Samples_insert(const int&, const Sample&);
 VEX_Samples * VEX_Samples_get();
+int VEX_Samples_increamentBucketCounter(const int&);
 
 // this keeps main container.
 struct VEX_SampleClass

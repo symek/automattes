@@ -180,22 +180,32 @@ VRAY_AutomatteFilter::filter(
     std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
     UT_ValArray<int> indices;
-    VEX_Samples * samples = VEX_Samples_get();
+    VEX_Samples  * samples = VEX_Samples_get();
+    SampleBucket * bucket  = nullptr;
+
     // std::cout << "Filter: " << samples << "\n";
     const int thread_id = UT_Thread::getMyThreadId();
     VEX_Samples::const_iterator it = samples->find(thread_id);
     bool use_vex_samples = false;
 
     if (it != samples->end()) {
-        const SampleBucket & bucket = samples->at(thread_id);
-        const size_t size = bucket.size();
+        const BucketQueue  & queue  = samples->at(thread_id);
+        BucketQueue::const_iterator jt = queue.begin();
+        for (; jt != queue.end(); ++jt) {
+            if (jt->size() != 0) {
+                bucket = &(*jt);
+                break; 
+            }
+        }
+        // const SampleBucket & bucket = *jit;
+        const size_t size = bucket->size();
         UT_Vector3F bucket_min = {0,0,0};
         UT_Vector3F bucket_max = {0,0,0};
         positions.bumpSize(size);
         indices.bumpSize(size);
 
         for (int i=0; i<size; ++i) {
-            const Sample & vexsample = bucket[i];
+            const Sample & vexsample = bucket->at(i);
             UT_Vector3 pos = {vexsample[0], vexsample[1], vexsample[2]};
             bucket_min = SYSmin(pos, bucket_min);
             bucket_max = SYSmax(pos, bucket_max);
@@ -237,7 +247,8 @@ VRAY_AutomatteFilter::filter(
     UT_Vector3PointQueue *queue;
     queue = pixelgrid->createQueue();
     UT_PointGridIterator<UT_Vector3Point> iter;
-    SampleBucket & bucket = samples->at(thread_id);
+    // BucketQueue  & queue  = samples->at(thread_id);
+    // SampleBucket & bucket = samples->at(thread_id);
     #endif
 
     for (int desty = 0; desty < destheight; ++desty) 
@@ -275,8 +286,8 @@ VRAY_AutomatteFilter::filter(
                 if (iter.entries() != 0) {
                     for (;!iter.atEnd(); iter.advance()) {
                         const size_t idx = iter.getValue();
-                        UT_ASSERT(idx < bucket.size());
-                        const Sample & vexsample = bucket[idx]; //something wrong is here.
+                        UT_ASSERT(idx < bucket->size());
+                        const Sample & vexsample = bucket->at(idx); //something wrong is here.
                         color += UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
                         alpha += vexsample[4];
                         const int mythreadid = static_cast<int>(vexsample[5]);
@@ -391,8 +402,13 @@ VRAY_AutomatteFilter::filter(
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid->destroyQueue(queue);
-    DEBUG_PRINT("bucket size: %d\n", bucket.size());
-    bucket.clear();
+    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu)\n", thread_id, myBucketCounter, bucket->size());
+    BucketQueue  & bqueue = samples->at(thread_id);
+    BucketQueue::iterator kt = bqueue.begin();
+    SampleBucket new_bucket;
+    bqueue.insert(kt, new_bucket);
+    // bucket.clear();
     #endif
 }
 

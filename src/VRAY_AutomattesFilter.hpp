@@ -130,6 +130,8 @@ private:
     // 0: filtered pseudo color, 
     // 1: for 0-1 ranks, 2: 2-3 and so on...
     int myRank; 
+    // debug 
+    // int myBucketCounter;
 
     const char* myIdTypeName;    // user string flag 
     Automatte_IdType myIdType;   // corresponding enumerator.

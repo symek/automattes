@@ -19,6 +19,8 @@ namespace HA_HDK {
 static std::mutex automattes_mutex;
 // our main storage
 static VEX_Samples vexsamples;
+static BucketCounter vexBucketCounter;
+static BucketCounter vrayBucketCounter;
 static VEX_SampleClass vexsamplesC;
 
 int VEX_Samples_create(const int& thread_id)
@@ -26,10 +28,14 @@ int VEX_Samples_create(const int& thread_id)
     std::lock_guard<std::mutex> guard(automattes_mutex);
     VEX_Samples::const_iterator it = vexsamples.find(thread_id);
     if(it == vexsamples.end()) {
+        BucketQueue queue;
     	SampleBucket bucket;	
-    	vexsamples.insert(std::pair<int, SampleBucket>(thread_id, bucket));
+    	vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
+        vexsamples[thread_id].push_back(bucket);
+        //debug
+        vexBucketCounter.insert(std::pair<int, int>(thread_id, 0));
+        vrayBucketCounter.insert(std::pair<int, int>(thread_id, 0));
     }
-    // std::cout << "Helper: " << &vexsamples << std::endl;
     return thread_id;
 } 
 
@@ -37,12 +43,26 @@ int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 {
 	VEX_Samples::const_iterator it = vexsamples.find(thread_id);
 	UT_ASSERT(it != vexsamples.end());
-	vexsamples[thread_id].push_back(sample);
-	return vexsamples[thread_id].size(); //thread_id;
+    BucketQueue::iterator jt = vexsamples[thread_id].begin();
+	jt->push_back(sample);
+    const size_t size = jt->size();
+    if (size == 1) {
+        vexBucketCounter[thread_id] += 1;
+        std::cout << "VEX    thread: " << thread_id << ", bucket count:" \
+            << vexBucketCounter[thread_id] << "\n";  
+    }
+	return static_cast<int>(size); //thread_id;
 }
 
-VEX_Samples * VEX_Samples_get() {
+VEX_Samples * VEX_Samples_get() 
+{
 	return &vexsamples;
+}
+
+int VEX_Samples_increamentBucketCounter(const int& thread_id)
+{
+    vrayBucketCounter[thread_id] += 1;
+    return vrayBucketCounter[thread_id];
 }
 
 #if 0
