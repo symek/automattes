@@ -13,6 +13,7 @@
 #include <PXL/PXL_DeepSampleList.h>
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
+#include <GU/GU_Detail.h>
 
 
 #include <iostream>
@@ -53,6 +54,98 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
 
 VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 {
+    #if 0
+    GU_Detail gdp, gdp2;
+    long npoints = 0;
+    long npoints2 = 0;
+    VEX_Samples  * samples = VEX_Samples_get();
+    // UT_PointGrid<UT_Vector3Point> pixelgrid(nullptr);
+    
+
+    DEBUG_PRINT(" VEX_Samples size: %lu\n", samples->size());
+    const int destwidth  = 62;
+    const int destheight = 62;
+
+    // const int thread_id = UT_Thread::getMyThreadId();
+    const VEX_Samples::const_iterator vexit = samples->begin();
+    for (; vexit!= samples->end(); ++vexit) {
+        const BucketQueue & queue = vexit->second;
+        const BucketQueue::const_iterator queit = queue.begin();
+        for (; queit != queue.end(); ++queit) {
+            const SampleBucket & bucket = (*queit);
+
+            if (bucket.size() == 0)
+                continue;
+
+            const int size = bucket.size();
+            UT_Vector3F bucket_min = {0,0,0};
+            UT_Vector3F bucket_max = {0,0,0};
+            UT_Vector3Array  positions(size);
+            UT_ValArray<int> indices(size);
+
+            const SampleBucket::const_iterator buit = bucket.begin();
+            for (int i=0; i< size; ++i) {
+                npoints++;
+                // const size_t size = bucket.size();
+                // positions.bumpSize(size);
+                // indices.bumpSize(size);
+                const Sample & sample = bucket.at(i);
+                const UT_Vector3 pos = {sample[0], sample[1], sample[2]};
+                GA_Offset ptoff = gdp.appendPoint();
+                gdp.setPos3(ptoff, pos);
+                bucket_min = SYSmin(pos, bucket_min);
+                bucket_max = SYSmax(pos, bucket_max);
+                positions.append(pos);
+                indices.append(i);
+            }
+
+            // Enlarage bbox a bit.
+            UT_Vector3 bucket_size(bucket_max - bucket_min);
+            // UT_Vector3 _sigma(bucket_size*.1);
+            // bucket_size += _sigma;
+            // bucket_min  -= _sigma;
+            UT_Vector3Point accessor(positions, indices);
+            UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
+
+            // 
+
+            if (pixelgrid.canBuild(destwidth, destheight, 1)) {
+                // Build it:
+                pixelgrid.build(bucket_min, bucket_size, destwidth, destheight, 1);
+                // DEBUG_PRINT("Build pixelgrid: ", 0);
+                
+            } else {
+                DEBUG_PRINT("Can't build. \n", 0);
+            }
+
+            UT_Vector3PointQueue *queue;
+            queue = pixelgrid.createQueue();
+            UT_PointGridIterator<UT_Vector3Point> iter;
+            // npoints2++;
+            for (int desty=0; desty < destheight; ++desty) {
+                for (int destx=0; destx < destwidth; ++destx) {
+                    iter = pixelgrid.getKeysAt(destx, desty, 0, *queue);    
+                    for (;!iter.atEnd(); iter.advance()) {
+                        npoints2 ++;
+                        const size_t idx = iter.getValue();
+                        // UT_ASSERT(idx < bucket.size());
+                        const Sample & sample = bucket.at(idx); 
+                        const UT_Vector3 pos = {sample[0], sample[1], sample[2]};
+                        GA_Offset ptoff = gdp2.appendPoint();
+                        gdp2.setPos3(ptoff, pos);
+                    }
+                    
+                }
+            }   
+        }
+    }
+
+    DEBUG_PRINT("Saving %lu and %lu points in total.\n", npoints, npoints2);
+    gdp.save("/tmp/testauto.bgeo", 0);
+    gdp2.save("/tmp/testauto2.bgeo", 0);
+
+    #endif
+
 
 }
 
@@ -174,24 +267,33 @@ VRAY_AutomatteFilter::filter(
     // It's not technically necessery, but some convention needs to be taken.
     UT_ASSERT(vectorsize == 4);
 
-    // temporarly to test vex->filter passing.
     #ifdef VEXSAMPLES
+    // temporarly to test vex->filter passing.
+    if (!VEX_bucketSizeSet())
+        VEX_setBucketSize(destwidth, destheight); //+ myFilterWidth?
+    BucketSize * bucketSize  = VEX_getBucketSize();
+    const int oridestwidth  = bucketSize->at(0);
+    const int oridestheight = bucketSize->at(1);
+    DEBUG_PRINT("my orginal bucket size: %i, %i (destx, desty): %i, %i\n", \
+        oridestwidth, oridestheight , destwidth, destheight);
 
     std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
     UT_ValArray<int> indices;
     VEX_Samples  * samples = VEX_Samples_get();
-    SampleBucket * bucket  = nullptr;
+    const SampleBucket * bucket  = nullptr;
 
     // std::cout << "Filter: " << samples << "\n";
     const int thread_id = UT_Thread::getMyThreadId();
-    VEX_Samples::const_iterator it = samples->find(thread_id);
+    const VEX_Samples::const_iterator it = samples->find(thread_id);
+    
     bool use_vex_samples = false;
+    int offset = 0;
 
     if (it != samples->end()) {
         const BucketQueue  & queue  = samples->at(thread_id);
         BucketQueue::const_iterator jt = queue.begin();
-        for (; jt != queue.end(); ++jt) {
+        for (; jt != queue.end(); ++jt, ++offset) {
             if (jt->size() != 0) {
                 bucket = &(*jt);
                 break; 
@@ -206,7 +308,7 @@ VRAY_AutomatteFilter::filter(
 
         for (int i=0; i<size; ++i) {
             const Sample & vexsample = bucket->at(i);
-            UT_Vector3 pos = {vexsample[0], vexsample[1], vexsample[2]};
+            const UT_Vector3 pos = {vexsample[0], vexsample[1], vexsample[2]};
             bucket_min = SYSmin(pos, bucket_min);
             bucket_max = SYSmax(pos, bucket_max);
             positions.append(pos);
@@ -214,9 +316,9 @@ VRAY_AutomatteFilter::filter(
         }
         // Enlarage bbox a bit.
         UT_Vector3 bucket_size(bucket_max - bucket_min);
-        UT_Vector3 _sigma(bucket_size*.01);
-        bucket_size += _sigma;
-        bucket_min  +- _sigma;
+        // UT_Vector3 _sigma(bucket_size*.01);
+        // bucket_size += _sigma;
+        // bucket_min  -= _sigma;
 
         // Point Grid structures/objects:
         UT_Vector3Point accessor(positions, indices);
@@ -224,9 +326,9 @@ VRAY_AutomatteFilter::filter(
             (new UT_PointGrid<UT_Vector3Point> (accessor));
 
         // 
-        if (pixelgrid->canBuild(destwidth, destheight, 1)) {
+        if (pixelgrid->canBuild(oridestwidth, oridestheight, 1)) {
             // Build it:
-            pixelgrid->build(bucket_min, bucket_size, destwidth+2, destheight+2, 1);
+            pixelgrid->build(bucket_min, bucket_size, oridestwidth, oridestheight, 1);
             use_vex_samples = true;
         }
     }
@@ -247,6 +349,7 @@ VRAY_AutomatteFilter::filter(
     UT_Vector3PointQueue *queue;
     queue = pixelgrid->createQueue();
     UT_PointGridIterator<UT_Vector3Point> iter;
+    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
     // BucketQueue  & queue  = samples->at(thread_id);
     // SampleBucket & bucket = samples->at(thread_id);
     #endif
@@ -280,28 +383,33 @@ VRAY_AutomatteFilter::filter(
             #ifdef VEXSAMPLES 
             // temporarly to test vex->filter passing.
             if (use_vex_samples) {
+                UT_ASSERT(destx < oridestwidth);
+                UT_ASSERT(desty < oridestheight);
                 iter = pixelgrid->getKeysAt(destx, desty, 0, *queue);
                 UT_Vector3 color = {0.0f, 0.0f, 0.0f};
                 float alpha = 0.f;
-                if (iter.entries() != 0) {
-                    for (;!iter.atEnd(); iter.advance()) {
-                        const size_t idx = iter.getValue();
-                        UT_ASSERT(idx < bucket->size());
-                        const Sample & vexsample = bucket->at(idx); //something wrong is here.
-                        color += UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
-                        alpha += vexsample[4];
-                        const int mythreadid = static_cast<int>(vexsample[5]);
-                        if (thread_id != mythreadid)
-                            DEBUG_PRINT("%i : %i", thread_id, mythreadid);
-                    }
-                    color /= iter.entries();
-                    // alpha /= iter.entries();
+                const int nvalues = iter.entries();
+                DEBUG_PRINT("pixelgrid: %lu, bucket: %lu\n", nvalues, bucket->size());
+                for (;!iter.atEnd(); iter.advance()) {
+                    const size_t idx = iter.getValue();
+                    UT_ASSERT(idx < bucket->size());
+                    const Sample & vexsample = bucket->at(idx); //something wrong is here.
+                    color += UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
+                    alpha += vexsample[4];
+                    const int mythreadid = static_cast<int>(vexsample[5]);
+                    UT_ASSERT(thread_id == mythreadid);
+                    // if ()
+                    //     DEBUG_PRINT("%i : %i", thread_id, mythreadid);
                 }
+                // const float divider = 
+                color /= nvalues != 0 ? (float)nvalues : 1.f;;
+                // alpha /= iter.entries();
+                
 
                 sample[0] = color.x();
-                sample[1] = color.y();
-                sample[2] = iter.entries()*1.f;//color.z();
-                sample[3] = alpha;
+                sample[1] = myBucketCounter*1.f;//color.y();
+                sample[2] = destwidth*1.f;//color.z();
+                sample[3] = destheight*1.f;
             }
 
             #endif
@@ -402,8 +510,9 @@ VRAY_AutomatteFilter::filter(
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid->destroyQueue(queue);
-    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
-    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu)\n", thread_id, myBucketCounter, bucket->size());
+   
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (usevex: %i)\n", \
+        thread_id, myBucketCounter, bucket->size(), offset, (int)use_vex_samples);
     BucketQueue  & bqueue = samples->at(thread_id);
     BucketQueue::iterator kt = bqueue.begin();
     SampleBucket new_bucket;

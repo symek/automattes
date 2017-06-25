@@ -14,8 +14,12 @@ typedef std::map<int, BucketQueue> VEX_Samples;
 typedef std::map<int, int> BucketCounter;
 // main storage container.
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
+typedef std::array<int, 2> BucketSize;
+
 // tmp
 static constexpr const int& size_at_least = 16*16*3*3;
+
+
 
 // pointgrid stuff useful for buliding filter side accesor.
 typedef  UT_PointGridVector3ArrayAccessor<int, int> UT_Vector3Point;
@@ -26,6 +30,9 @@ int VEX_Samples_create(const int&);
 int VEX_Samples_insert(const int&, const Sample&);
 VEX_Samples * VEX_Samples_get();
 int VEX_Samples_increamentBucketCounter(const int&);
+BucketSize * VEX_getBucketSize();
+void VEX_setBucketSize(int x, int y);
+int VEX_bucketSizeSet();
 
 // this keeps main container.
 struct VEX_SampleClass

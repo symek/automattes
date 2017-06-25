@@ -17,11 +17,15 @@ namespace HA_HDK {
 
 // used only for creating per thread storage
 static std::mutex automattes_mutex;
+static std::mutex automattes_mutex2;
 // our main storage
 static VEX_Samples vexsamples;
 static BucketCounter vexBucketCounter;
 static BucketCounter vrayBucketCounter;
 static VEX_SampleClass vexsamplesC;
+static BucketSize bucketSize = {0,0};
+static bool bucketSizeSet = 0;
+
 
 int VEX_Samples_create(const int& thread_id)
 {
@@ -64,6 +68,21 @@ int VEX_Samples_increamentBucketCounter(const int& thread_id)
     vrayBucketCounter[thread_id] += 1;
     return vrayBucketCounter[thread_id];
 }
+
+BucketSize * VEX_getBucketSize() {
+	return &bucketSize;
+}
+
+void VEX_setBucketSize(int x, int y) {
+	std::lock_guard<std::mutex> guard(automattes_mutex2);
+	if (bucketSize[0] != 0 || bucketSize[1] != 0) 
+		return;
+	
+	bucketSize[0] = x;
+	bucketSize[1] = y;
+}
+
+int VEX_bucketSizeSet() { return bucketSizeSet; }
 
 #if 0
 int 

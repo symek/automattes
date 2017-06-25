@@ -28,6 +28,9 @@ typedef  std::map<float, float>  HashMap;
 
 namespace HA_HDK {
 
+template<typename It>
+inline auto myPointer(It const&it) -> decltype(std::addressof(*it)) { return std::addressof(*it); }
+
 // static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
                                     // "CryptoObject01", "CryptoObject02"};
 
