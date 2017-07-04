@@ -20,6 +20,7 @@
 #include <map>
 #include <unordered_map>
 #include <memory>
+#include <limits>
 
 #include "VRAY_AutomattesFilter.hpp"
 #include "AutomattesHelper.hpp"
@@ -54,7 +55,7 @@ VRAY_AutomatteFilter::VRAY_AutomatteFilter()
 
 VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 {
-    #if 1
+    #if 0
     GU_Detail gdp, gdp2;
     long npoints = 0;
     long npoints2 = 0;
@@ -101,9 +102,9 @@ VRAY_AutomatteFilter::~VRAY_AutomatteFilter()
 
             // Enlarage bbox a bit.
             UT_Vector3 bucket_size(bucket_max - bucket_min);
-            // UT_Vector3 _sigma(bucket_size*.1);
-            // bucket_size += _sigma;
-            // bucket_min  -= _sigma;
+            UT_Vector3 _sigma(bucket_size*.1);
+            bucket_size += _sigma;
+            bucket_min  -= _sigma;
             UT_Vector3Point accessor(positions, indices);
             UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
 
@@ -271,24 +272,25 @@ VRAY_AutomatteFilter::filter(
 
     #ifdef VEXSAMPLES
     // temporarly to test vex->filter passing.
-    if (!VEX_bucketSizeSet())
-        VEX_setBucketSize(destwidth, destheight); //+ myFilterWidth?
-    BucketSize * bucketSize  = VEX_getBucketSize();
-    const int oridestwidth  = bucketSize->at(0);
-    const int oridestheight = bucketSize->at(1);
+    // if (!VEX_bucketSizeSet())
+        // VEX_setBucketSize(destwidth, destheight); //+ myFilterWidth?
+    // BucketSize * bucketSize  = VEX_getBucketSize();
+    const int oridestwidth  = 1 + (sourcewidth / mySamplesPerPixelX);// bucketSize->at(0);
+    const int oridestheight = 1 + (sourceheight / mySamplesPerPixelY);// bucketSize->at(1);
     // DEBUG_PRINT("my orginal bucket size: %i, %i (destx, desty): %i, %i\n", \
         // oridestwidth, oridestheight , destwidth, destheight);
 
     // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
     UT_ValArray<int> indices;
-    UT_Vector3 bucket_min = {0,0,0};
-    UT_Vector3 bucket_max = {0,0,0};
+    UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
+    UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
     UT_Vector3 bucket_size = {0,0,0};
     VEX_Samples  * samples = VEX_Samples_get();
     const SampleBucket * bucket  = nullptr;
 
     GU_Detail gdp, gdp2;
+    UT_BoundingBox bucketBbox;
 
     // std::cout << "Filter: " << samples << "\n";
     const int thread_id = UT_Thread::getMyThreadId();
@@ -297,6 +299,8 @@ VRAY_AutomatteFilter::filter(
     
     bool use_vex_samples = false;
     int offset = 0;
+    int bucket_threadid = 0;
+    int fullbuckets = 0;
 
     if (it != samples->end()) {
         const BucketQueue  & queue  = samples->at(thread_id);
@@ -307,6 +311,13 @@ VRAY_AutomatteFilter::filter(
                 break; 
             }
         }
+
+        jt = queue.begin();
+        for (; jt != queue.end(); ++jt) {
+            if (jt->size() != 0)
+               fullbuckets++;
+        }
+
         // const SampleBucket & bucket = *jit;
         const size_t size = bucket->size();
         positions.bumpSize(size);
@@ -315,7 +326,8 @@ VRAY_AutomatteFilter::filter(
         for (int i=0; i<size; ++i) {
             const Sample & vexsample = bucket->at(i);
             const UT_Vector3 pos = {vexsample[0], vexsample[1], vexsample[2]};
-            bucket_min = SYSmin(pos, bucket_min);
+            bucket_threadid = static_cast<int>(vexsample[5]);
+            bucket_min = SYSmin(pos, bucket_min); //
             bucket_max = SYSmax(pos, bucket_max);
             GA_Offset ptoff = gdp.appendPoint();
             gdp.setPos3(ptoff, pos);
@@ -324,16 +336,20 @@ VRAY_AutomatteFilter::filter(
         }
         // Enlarage bbox a bit.
         bucket_size = bucket_max - bucket_min;
+        bucketBbox.initBounds(bucket_min, bucket_max);
+        // gdp.getBBox(&bucketBbox);
         // UT_Vector3 _sigma(bucket_size*.01);
         // bucket_size += _sigma;
         // bucket_min  -= _sigma;
         // DEBUG_PRINT("positions.size(): %i, indices.size(): %i\n", positions.size(), indices.size());
     }
 
+    if (bucket_threadid != thread_id && bucket_threadid != 0)
+        DEBUG_PRINT("WARNINIG: %i != %i\n", thread_id, bucket_threadid);
     // debug:
-    char filename[50];
-    sprintf(filename, "/tmp/gdp.%i.bgeo", myBucketCounter);
-    gdp.save(filename, 0);
+    // char filename[50];
+    // sprintf(filename, "/tmp/gdp.%i.bgeo", myBucketCounter);
+    // gdp.save(filename, 0);
 
     // Point Grid structures/objects:
     UT_Vector3Point accessor(positions, indices);
@@ -345,7 +361,7 @@ VRAY_AutomatteFilter::filter(
     // 
     if (pixelgrid.canBuild(oridestwidth, oridestheight, 1)) {
         // Build it:
-        pixelgrid.build(bucket_min, bucket_size, oridestwidth, oridestheight, 1);
+        pixelgrid.build(bucketBbox.minvec(), bucketBbox.size(), oridestwidth, oridestheight, 1);
         use_vex_samples = true;
     }
 
@@ -360,34 +376,47 @@ VRAY_AutomatteFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 vsample[i] = 0.f;
 
-            iter = pixelgrid.getKeysAt(x, y, 0, *queue);
+            const int offsetx = destxoffsetinsource / mySamplesPerPixelX;
+            const int offsety = destyoffsetinsource / mySamplesPerPixelY;
+            // const int offsetx = destxoffsetinsource / mySamplesPerPixelX;
+
+            iter = pixelgrid.getKeysAt(x+offsetx, y+offsety, 0, *queue);
             UT_Vector3 clr = {0.0f, 0.f, 0.f};
             for (;!iter.atEnd(); iter.advance()) {
                 const size_t idx = iter.getValue();
                 UT_ASSERT(idx < bucket->size());
                 const Sample & vexsample = bucket->at(idx); 
-                const UT_Vector3 pos = UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
-                clr += pos;
+                const UT_Vector3 pos = {vexsample[0], vexsample[1], vexsample[2]};
+                const UT_Vector3 c   = {vexsample[3], vexsample[3], vexsample[3]};
+                clr += c;
+                //debug
                 GA_Offset ptoff = gdp2.appendPoint();
                 gdp2.setPos3(ptoff, pos);
             }
 
+            clr /= iter.entries() != 0 ? iter.entries() : 1;
             vsample[0] = clr[0]; vsample[1] = clr[1]; vsample[2] = clr[2];
+            // vsample[0] = bucketBbox.minvec().x();
+            // vsample[1] = bucketBbox.minvec().y();
+            // vsample[2] = bucketBbox.maxvec().x(); 
+            // vsample[3] = bucketBbox.maxvec().y();
+
+
             for (int i = 0; i< vectorsize; ++i, ++destination) {
                     *destination  = vsample[i];// / gaussianNorm; 
                 }
         }
     }
 
+    
+    // sprintf(filename, "/tmp/gdp2.%i.bgeo", myBucketCounter);
+    // gdp2.save(filename, 0);
 
-    sprintf(filename, "/tmp/gdp2.%i.bgeo", myBucketCounter);
-    gdp2.save(filename, 0);
-
-    DEBUG_PRINT("destxoffsetinsource: %i, destyoffsetinsource: %i\n", destxoffsetinsource, destyoffsetinsource);
+    // DEBUG_PRINT("destxoffsetinsource: %i, destyoffsetinsource: %i\n", destxoffsetinsource, destyoffsetinsource);
 
     
     #endif
-
+    /*
     const float *const colordata = getSampleData(source, channel);
     const float *const Object_ids  = (myHashType == MANTRA) ? \
         getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
@@ -557,18 +586,21 @@ VRAY_AutomatteFilter::filter(
         }
     }
 
+    */
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
-   
-    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (usevex: %i)\n", \
-        thread_id, myBucketCounter, bucket->size(), offset, (int)use_vex_samples);
+    // DEBUG_PRINT("Source width and hight: %i, %i\n", sourcewidth/mySamplesPerPixelX, sourceheight/mySamplesPerPixelY);
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (fullbuckets: %i)\n", \
+        thread_id, myBucketCounter, bucket->size(), offset, fullbuckets);
     BucketQueue  & bqueue = samples->at(thread_id);
     BucketQueue::iterator kt = bqueue.begin();
     SampleBucket new_bucket;
     bqueue.insert(kt, new_bucket);
     // bucket.clear();
     #endif
+
+
 }
 
 
