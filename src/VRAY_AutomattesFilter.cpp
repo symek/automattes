@@ -267,7 +267,7 @@ VRAY_AutomatteFilter::filter(
     UT_ASSERT(vectorsize == 4);
 
     #ifdef VEXSAMPLES
-    const int sourcetodestwidth  = sourcewidth / mySamplesPerPixelX;
+    const int sourcetodestwidth  = sourcewidth  / mySamplesPerPixelX;
     const int sourcetodestheight = sourceheight / mySamplesPerPixelY;
 
     // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
@@ -368,11 +368,11 @@ VRAY_AutomatteFilter::filter(
 
     for (int desty = 0; desty < destheight; ++desty) 
     {
-        const int pixelgridoffsety =  desty + destyoffsetinsource / mySamplesPerPixelY;
+        const int pixelgridoffsety = (destyoffsetinsource/mySamplesPerPixelY) + desty;
 
         for (int destx = 0; destx < destwidth; ++destx)
         {
-            const int pixelgridoffsetx = destx + destxoffsetinsource / mySamplesPerPixelX;
+            const int pixelgridoffsetx = (destxoffsetinsource/mySamplesPerPixelX) + destx;
             // First, compute the sample bounds of the pixel
             const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
             const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
@@ -400,13 +400,39 @@ VRAY_AutomatteFilter::filter(
             UT_ASSERT(sourcetodestwidth < destwidth);
             UT_ASSERT(sourcetodestheight < destheight);
 
+            const int sourceidxfirst = sourcefirstrx + sourcewidth*sourcefirstry;
+            const int sourceidxlast  = sourcelastrx  + sourcewidth*sourcelastry;
+            const UT_Vector3 posfirst= {colordata[vectorsize*sourceidxfirst+0],
+                                        colordata[vectorsize*sourceidxfirst+3],
+                                        0.f};
+            const UT_Vector3 poslast = {colordata[vectorsize*sourceidxlast+0],
+                                        colordata[vectorsize*sourceidxlast+3],
+                                        0.f};
+
+            UT_Vector3 avgpos = {0,0,0};
+            float counter = 0.f;
+            for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey) {
+                for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex){
+                    const int sourceidx = sourcex + sourcewidth*sourcey;
+                    const UT_Vector3 pos = {colordata[vectorsize*sourceidx+0],
+                                            colordata[vectorsize*sourceidx+3],
+                                            0.f};
+                    avgpos += pos;
+                    counter++; 
+                }
+            }
+                avgpos /= SYSmax(counter, 1.f);
+            
+
+
+
             // find (x,y)
             const UT_Vector3 position = {bucket_min.x() + vsize.x()/2.f + (vsize.x() * pixelgridoffsetx),
                                          bucket_min.y() + vsize.y()/2.f + (vsize.y() * pixelgridoffsety),
                                          0.f};
 
-                                         
-            iter = pixelgrid.findCloseKeys(position, *queue, voxelradius);
+                              
+            iter = pixelgrid.findCloseKeys(avgpos, *queue, voxelradius);
             const bool haspoints = pixelgrid.hasCloseKeys(position, voxelradius);
             const int entries    = SYSmax((float)iter.entries(), 1.f);  
             // DEBUG_PRINT("Has entries: %i ", haspoints);
@@ -430,7 +456,7 @@ VRAY_AutomatteFilter::filter(
                 if (dx > voxelradius || dy > voxelradius)
                     continue;
 
-                const float gaussianWeight = gaussianFilter(dx/1.66667, dy/1.66667, \
+                const float gaussianWeight = gaussianFilter(dx*1.66667, dy*1.66667, \
                     myGaussianExp, myGaussianAlpha);
                 gaussianNorm += gaussianWeight;
 
