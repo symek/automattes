@@ -281,15 +281,14 @@ VRAY_AutomatteFilter::filter(
 
     UT_BoundingBox bucketBbox;
 
-    const int thread_id = UT_Thread::getMyThreadId();
+    const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
     const VEX_Samples::const_iterator it = samples->find(thread_id);
-
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
     
-    bool use_vex_samples = false;
     int offset = 0;
     int bucket_threadid = 0;
     int fullbuckets = 0;
+    int foundDeepSamples = 0;
 
     // find first non empty bucket. this is wrong way
     // buckets are empty for background, needs to find a way ot find them.
@@ -322,28 +321,22 @@ VRAY_AutomatteFilter::filter(
         if (bucket_threadid != thread_id && bucket_threadid != 0)
             DEBUG_PRINT("WARNINIG: %i != %i\n", thread_id, bucket_threadid);
         
-        // Enlarage bbox a bit.
+        // Enlarage bbox a bit, otherwise we won't find anything in it.
         bucket_size = bucket_max - bucket_min;
-        // UT_Vector3 _sigma(bucket_size*.01);
-        // bucket_size += _sigma;
-        // FIXME: ???
         bucket_min.z()  = -.01;
         bucket_max.z()  =  .01;
         bucketBbox.initBounds(bucket_min, bucket_max);
     }
 
 
-    // Point Grid structures/objects:
+    // Point Grid structures/objects (we could use persistand grid per bucket once we move to bucket class)
     UT_Vector3Point accessor(positions, indices);
     UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
-
     // pixelgrid = std::unique_ptr<UT_PointGrid<UT_Vector3Point>> (new UT_PointGrid<UT_Vector3Point> (accessor));
 
     // 
     if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
-        // Build it:
         pixelgrid.build(bucketBbox.minvec(), bucketBbox.size(), sourcetodestwidth, sourcetodestheight, 1);
-        use_vex_samples = true;
     }
 
     UT_Vector3PointQueue *queue;
@@ -362,10 +355,7 @@ VRAY_AutomatteFilter::filter(
      // * - not supported yet.
     const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
-
-    const UT_Vector3 vsize  = pixelgrid.getVoxelSize(); 
-    const float voxelradius = myFilterWidth * (vsize.x() / 4.f); // FIXME: this is wrong...
-
+    // Run over destination pixels
     for (int desty = 0; desty < destheight; ++desty) 
     {
         const int pixelgridoffsety = (destyoffsetinsource/mySamplesPerPixelY) + desty;
@@ -395,92 +385,6 @@ VRAY_AutomatteFilter::filter(
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0.f;
 
-            #ifdef VEXSAMPLES 
-            
-            UT_ASSERT(sourcetodestwidth < destwidth);
-            UT_ASSERT(sourcetodestheight < destheight);
-
-            const int sourceidxfirst = sourcefirstrx + sourcewidth*sourcefirstry;
-            const int sourceidxlast  = sourcelastrx  + sourcewidth*sourcelastry;
-            const UT_Vector3 posfirst= {colordata[vectorsize*sourceidxfirst+0],
-                                        colordata[vectorsize*sourceidxfirst+3],
-                                        0.f};
-            const UT_Vector3 poslast = {colordata[vectorsize*sourceidxlast+0],
-                                        colordata[vectorsize*sourceidxlast+3],
-                                        0.f};
-
-            UT_Vector3 avgpos = {0,0,0};
-            float counter = 0.f;
-            for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey) {
-                for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex){
-                    const int sourceidx = sourcex + sourcewidth*sourcey;
-                    const UT_Vector3 pos = {colordata[vectorsize*sourceidx+0],
-                                            colordata[vectorsize*sourceidx+3],
-                                            0.f};
-                    avgpos += pos;
-                    counter++; 
-                }
-            }
-                avgpos /= SYSmax(counter, 1.f);
-            
-
-
-
-            // find (x,y)
-            const UT_Vector3 position = {bucket_min.x() + vsize.x()/2.f + (vsize.x() * pixelgridoffsetx),
-                                         bucket_min.y() + vsize.y()/2.f + (vsize.y() * pixelgridoffsety),
-                                         0.f};
-
-                              
-            iter = pixelgrid.findCloseKeys(avgpos, *queue, voxelradius);
-            const bool haspoints = pixelgrid.hasCloseKeys(position, voxelradius);
-            const int entries    = SYSmax((float)iter.entries(), 1.f);  
-            // DEBUG_PRINT("Has entries: %i ", haspoints);
-
-            // iter = pixelgrid.getKeysAt(pixelgridoffsetx, pixelgridoffsety, 0, *queue);
-
-            float alpha = 0.f;
-            float _id   = 0.f;
-            UT_Vector3 color = {0.0f, 0.0f, 0.0f};
-            float gaussianNorm = 0;
-
-            for (;!iter.atEnd(); iter.advance()) {
-                const size_t idx = iter.getValue();
-                UT_ASSERT(idx < bucket->size());
-                const Sample & vexsample = bucket->at(idx);
-                const UT_Vector3 samplepos = {vexsample[0], vexsample[1], 0.f};
-                const float dx = abs(vexsample[0] - position.x());
-                const float dy = abs(vexsample[1] - position.y());
-
-                // FIXME 
-                if (dx > voxelradius || dy > voxelradius)
-                    continue;
-
-                const float gaussianWeight = gaussianFilter(dx*1.66667, dy*1.66667, \
-                    myGaussianExp, myGaussianAlpha);
-                gaussianNorm += gaussianWeight;
-
-                color += UT_Vector3(vexsample[0], vexsample[1], vexsample[2]);
-                _id    = vexsample[3];
-                alpha += vexsample[4];
-
-                uint seed = static_cast<uint>(_id);
-                sample[1] += SYSfastRandom(seed) * gaussianWeight;// / entries;
-                    seed  += 2345;
-                sample[2] += SYSfastRandom(seed) * gaussianWeight;// / entries;
-                sample[3] += alpha *gaussianWeight;
-
-            }
-
-            // color /= entries;
-            for (int i = 0; i< vectorsize; ++i, ++destination)
-                    *destination  = sample[i] / gaussianNorm;
-
-            #endif
-
-
-            #ifndef VEXSAMPLES
-            // canonical way
 
             HashMap hash_map;
             float gaussianNorm = 0;
@@ -501,16 +405,47 @@ VRAY_AutomatteFilter::filter(
                             / float(mySamplesPerPixelY);
 
                         // TODO: remove magic number
-                        const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, \
-                            myGaussianAlpha);
+                        const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
                         gaussianNorm += gaussianWeight;
+                    
+                    
+                        #ifdef VEXSAMPLES
+
+                        const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
+                        const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
+                        const UT_Vector3 position = {sx, sy, 0.f};
+                        const float radius = 0.0001f;
+
+                      
+                        iter = pixelgrid.findCloseKeys(position, *queue, radius);
+                        const int entries = SYSmax((float)iter.entries(), 1.f);
+                        foundDeepSamples += (entries - 1); 
+
+                        for (;!iter.atEnd(); iter.advance()) {
+                            const size_t idx = iter.getValue();
+                            UT_ASSERT(idx < bucket->size());
+                            const Sample & vexsample = bucket->at(idx);
+                            const float _id =  vexsample[3];
+                            // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
+                            const float coverage = (vexsample[4]/float(entries)) * gaussianWeight; 
+
+                            uint seed  = static_cast<uint>(_id);
+                            sample[1] += gaussianWeight * (SYSfastRandom(seed)/entries);
+                                 seed += 2345;
+                            sample[2] += gaussianWeight * (SYSfastRandom(seed)/entries); 
+
+                            if (hash_map.find(_id) == hash_map.end()) {
+                                hash_map.insert(std::pair<float, float>(_id, coverage));
+                            }
+                            else {
+                                hash_map[_id] += coverage;
+                            }
+                        }
                         
+                        #else
 
-                        // For now this is our coverage sample, which means 
                         // no transparency support (because of precomposed shader samples).
-                        // thus we can assume 1 instead of sampling alphs / opacity.
                         const float coverage = 1.f * gaussianWeight; //fixme
-
                         // This is ugly, fixme
                         const float object_id   = (myHashType == MANTRA) ? \
                             Object_ids[sourceidx] : colordata[vectorsize*sourceidx+hash_index];    // G -> object_id
@@ -519,20 +454,21 @@ VRAY_AutomatteFilter::filter(
 
                         const float _id = (myIdType == OBJECT) ? object_id : material_id; 
 
-                        // temporarly to test vex->filter passing.
-                        if (!use_vex_samples) {
-                            uint seed  = static_cast<uint>(_id);
-                            sample[1] += gaussianWeight * SYSfastRandom(seed);
-                                 seed += 2345;
-                            sample[2] += gaussianWeight * SYSfastRandom(seed); 
-                        }
-
-                        if (hash_map.find(object_id) == hash_map.end()) {
+                        // 
+                        uint seed  = static_cast<uint>(_id);
+                        sample[1] += gaussianWeight * SYSfastRandom(seed);
+                             seed += 2345;
+                        sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                        
+                        // 
+                        if (hash_map.find(_id) == hash_map.end()) {
                             hash_map.insert(std::pair<float, float>(_id, coverage));
                         }
                         else {
-                            hash_map[object_id]   += coverage;
+                            hash_map[_id]   += coverage;
                         } 
+
+                        #endif // end of VEXSAMPLES
                     }
                 }
             }
@@ -570,16 +506,15 @@ VRAY_AutomatteFilter::filter(
                 }   
                        
             }
-         // end of canonical way
-        #endif 
+         // end of canonical way 
         }
     }
 
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
-    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i)\n", \
-        thread_id, myBucketCounter, bucket->size(), offset, sourcetodestwidth, sourcetodestheight);
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i)\n", \
+        thread_id, myBucketCounter, bucket->size(), offset, sourcetodestwidth, sourcetodestheight, foundDeepSamples);
     BucketQueue  & bqueue = samples->at(thread_id);
     BucketQueue::iterator kt = bqueue.begin();
     SampleBucket new_bucket;

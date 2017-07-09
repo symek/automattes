@@ -36,7 +36,8 @@ inline auto myPointer(It const&it) -> decltype(std::addressof(*it)) { return std
 
 enum Automatte_HashType {
     MANTRA,
-    CRYPTO
+    CRYPTO,
+    DEEP
 };
 
 
