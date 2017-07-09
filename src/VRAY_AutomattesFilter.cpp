@@ -267,8 +267,8 @@ VRAY_AutomatteFilter::filter(
     UT_ASSERT(vectorsize == 4);
 
     #ifdef VEXSAMPLES
-    const int sourcetodestwidth  = sourcewidth  / mySamplesPerPixelX;
-    const int sourcetodestheight = sourceheight / mySamplesPerPixelY;
+    const int sourcetodestwidth  = sourcewidth;// / mySamplesPerPixelX;
+    const int sourcetodestheight = sourceheight;// / mySamplesPerPixelY;
 
     // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
@@ -326,6 +326,7 @@ VRAY_AutomatteFilter::filter(
         bucket_min.z()  = -.01;
         bucket_max.z()  =  .01;
         bucketBbox.initBounds(bucket_min, bucket_max);
+        // bucketBbox.expandBounds(.001f, .001f, 0.f);
     }
 
 
@@ -358,11 +359,11 @@ VRAY_AutomatteFilter::filter(
     // Run over destination pixels
     for (int desty = 0; desty < destheight; ++desty) 
     {
-        const int pixelgridoffsety = (destyoffsetinsource/mySamplesPerPixelY) + desty;
+        // const int pixelgridoffsety = (destyoffsetinsource/mySamplesPerPixelY) + desty;
 
         for (int destx = 0; destx < destwidth; ++destx)
         {
-            const int pixelgridoffsetx = (destxoffsetinsource/mySamplesPerPixelX) + destx;
+            // const int pixelgridoffsetx = (destxoffsetinsource/mySamplesPerPixelX) + destx;
             // First, compute the sample bounds of the pixel
             const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
             const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
@@ -406,20 +407,22 @@ VRAY_AutomatteFilter::filter(
 
                         // TODO: remove magic number
                         const float gaussianWeight = gaussianFilter(x*1.66667, y*1.66667, myGaussianExp, myGaussianAlpha);
-                        gaussianNorm += gaussianWeight;
-                    
                     
                         #ifdef VEXSAMPLES
 
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
                         const UT_Vector3 position = {sx, sy, 0.f};
-                        const float radius = 0.0001f;
+                        const float radius = 0.000001f;
 
-                      
+                        // int idx, idy, idz;
+                        // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
+                        // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
                         iter = pixelgrid.findCloseKeys(position, *queue, radius);
                         const int entries = SYSmax((float)iter.entries(), 1.f);
-                        foundDeepSamples += (entries - 1); 
+                        foundDeepSamples += (iter.entries() - 1);
+                        const float repEntries = 1.f/(float)entries; 
+                        gaussianNorm += (gaussianWeight*entries);
 
                         for (;!iter.atEnd(); iter.advance()) {
                             const size_t idx = iter.getValue();
@@ -427,12 +430,14 @@ VRAY_AutomatteFilter::filter(
                             const Sample & vexsample = bucket->at(idx);
                             const float _id =  vexsample[3];
                             // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
-                            const float coverage = (vexsample[4]/float(entries)) * gaussianWeight; 
-
+                            const float coverage = vexsample[4] * gaussianWeight; 
                             uint seed  = static_cast<uint>(_id);
-                            sample[1] += gaussianWeight * (SYSfastRandom(seed)/entries);
+                            sample[1] += gaussianWeight * SYSfastRandom(seed);
                                  seed += 2345;
-                            sample[2] += gaussianWeight * (SYSfastRandom(seed)/entries); 
+                            sample[2] += gaussianWeight * SYSfastRandom(seed); 
+
+                            // pseudo color to check offset:
+                            //sample[0] = float(offset);
 
                             if (hash_map.find(_id) == hash_map.end()) {
                                 hash_map.insert(std::pair<float, float>(_id, coverage));
@@ -441,9 +446,10 @@ VRAY_AutomatteFilter::filter(
                                 hash_map[_id] += coverage;
                             }
                         }
-                        
+
                         #else
 
+                        gaussianNorm += gaussianWeight;
                         // no transparency support (because of precomposed shader samples).
                         const float coverage = 1.f * gaussianWeight; //fixme
                         // This is ugly, fixme
@@ -487,7 +493,7 @@ VRAY_AutomatteFilter::filter(
             if (myRank == 0) {
                 // sample[2] = rit->second;
                 for (int i = 0; i< vectorsize; ++i, ++destination) {
-                    *destination  = sample[i];// / gaussianNorm; 
+                    *destination  = sample[i] / gaussianNorm; 
                 }
                     
             } else {
