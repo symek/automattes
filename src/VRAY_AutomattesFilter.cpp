@@ -285,7 +285,7 @@ VRAY_AutomatteFilter::filter(
     // const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
     const int thread_id = SYSgetSTID();
     const VEX_Samples::const_iterator it = samples->find(thread_id);
-    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
+    const int myBucketCounter = 0;//VEX_Samples_increamentBucketCounter(thread_id);
     
     int offset = 0;
     int bucket_threadid = 0;
@@ -319,9 +319,9 @@ VRAY_AutomatteFilter::filter(
         }
 
         // just check assumtion tmp.
-        UT_ASSERT(thread_id == bucket_threadid);
         if (bucket_threadid != thread_id && bucket_threadid != 0)
             DEBUG_PRINT("WARNINIG: %i != %i\n", thread_id, bucket_threadid);
+        UT_ASSERT(thread_id == bucket_threadid);
         
         // Enlarage bbox a bit, otherwise we won't find anything in it.
         bucket_size = bucket_max - bucket_min;
@@ -358,6 +358,71 @@ VRAY_AutomatteFilter::filter(
      // * - not supported yet.
     const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
+    #if 1
+    UT_BoundingBox sourceBbox;
+    UT_Vector3 source_min = {FLT_MAX, FLT_MAX, FLT_MAX};
+    UT_Vector3 source_max = {FLT_MIN, FLT_MIN, FLT_MIN};
+    for (int desty = 0; desty < destheight; ++desty) 
+    {
+        for (int destx = 0; destx < destwidth; ++destx) 
+        {
+            const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
+            const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
+            const int sourcelastx = sourcefirstx + mySamplesPerPixelX-1;
+            const int sourcelasty = sourcefirsty + mySamplesPerPixelY-1;
+            // Find the first sample to read for opacity and Pz
+            const int sourcefirstox = sourcefirstx + (mySamplesPerPixelX>>1) - myOpacitySamplesHalfX;
+            const int sourcefirstoy = sourcefirsty + (mySamplesPerPixelY>>1) - myOpacitySamplesHalfY;
+            // // Find the last sample to read for colour and z gradients
+            const int sourcelastox = sourcefirstx + ((mySamplesPerPixelX-1)>>1) + myOpacitySamplesHalfX;
+            const int sourcelastoy = sourcefirsty + ((mySamplesPerPixelY-1)>>1) + myOpacitySamplesHalfY;
+
+            int sourcefirstrx = sourcefirstox;
+            int sourcefirstry = sourcefirstoy;
+            int sourcelastrx = sourcelastox;
+            int sourcelastry = sourcelastoy;
+
+            for (int sourcey = sourcefirstry; sourcey <= sourcelastry; ++sourcey)
+            {
+                for (int sourcex = sourcefirstrx; sourcex <= sourcelastrx; ++sourcex) 
+                {
+                    const int sourceidx = sourcex + sourcewidth*sourcey;
+                    if(sourcex >= sourcefirstox && sourcex <= sourcelastox &&\
+                      sourcey >= sourcefirstoy && sourcey <= sourcelastoy) {
+                        const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
+                        const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
+                        const UT_Vector3 position = {sx, sy, 0.f};
+                        source_min = SYSmin(source_min, position);
+                        source_max = SYSmax(source_max, position);
+
+                    }
+                }
+            }
+        }
+    }
+
+    source_min.z()  = -.01;
+    source_max.z()  =  .01;
+    sourceBbox.initBounds(source_min, source_max);
+
+    UT_StackBuffer<float> sample(vectorsize);
+    for (int i = 0; i < vectorsize; ++i)
+        sample[i] = 0.f;
+
+    sample[0] = bucketBbox.minvec().x();
+    sample[1] = bucketBbox.minvec().y();
+    sample[2] = sourceBbox.minvec().x();
+    sample[3] = sourceBbox.minvec().y();
+
+    for (int desty = 0; desty < destheight; ++desty) {
+        for (int destx = 0; destx < destwidth; ++destx) {
+             for (int i = 0; i< vectorsize; ++i, ++destination)
+                    *destination  = sample[i];
+        }
+    }
+
+
+    #else
     // Run over destination pixels
     for (int desty = 0; desty < destheight; ++desty) 
     {
@@ -428,7 +493,7 @@ VRAY_AutomatteFilter::filter(
                         gaussianNorm += (gaussianWeight*entries);
 
                         // TMP pseudo color to check offset:
-                        if (0/*iter.entries()*/) {
+                        if (iter.entries() == 0) {
                             sample[0] += float(offset) * gaussianWeight;
                         } else {
                             for (;!iter.atEnd(); iter.advance()) {
@@ -522,16 +587,19 @@ VRAY_AutomatteFilter::filter(
         }
     }
 
+    #endif
+
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i)\n", \
         thread_id, myBucketCounter, bucket->size(), offset, sourcetodestwidth, sourcetodestheight, foundDeepSamples);
-    BucketQueue  & bqueue = samples->at(thread_id);
-    BucketQueue::iterator kt = bqueue.begin();
-    SampleBucket new_bucket;
-    bqueue.insert(kt, new_bucket);
+    // BucketQueue  & bqueue = samples->at(thread_id);
+    // BucketQueue::iterator kt = bqueue.begin();
+    // SampleBucket new_bucket;
+    // bqueue.insert(kt, new_bucket);
     // bucket.clear();
+    VEX_Samples_insertBucket(thread_id);
     #endif
 
 
