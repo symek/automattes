@@ -28,6 +28,7 @@ typedef  UT_PointGrid<UT_Vector3Point>::queuetype UT_Vector3PointQueue;
 // function exposed on vex side (temporarily instead of proper class)
 int VEX_Samples_create(const int&);
 int VEX_Samples_insert(const int&, const Sample&);
+void VEX_Samples_insertBucket(const int&);
 VEX_Samples * VEX_Samples_get();
 int VEX_Samples_increamentBucketCounter(const int&);
 BucketSize * VEX_getBucketSize();

@@ -70,6 +70,15 @@ int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 	return static_cast<int>(size); //thread_id;
 }
 
+void VEX_Samples_insertBucket(const int & thread_id)
+{
+    std::lock_guard<std::mutex> guard(automattes_mutex2);
+    BucketQueue  & bqueue = vexsamples.at(thread_id);
+    BucketQueue::iterator kt = bqueue.begin();
+    SampleBucket new_bucket;
+    bqueue.insert(kt, new_bucket);
+}
+
 VEX_Samples * VEX_Samples_get() 
 {
 	return &vexsamples;
