@@ -25,21 +25,33 @@ static BucketCounter vrayBucketCounter;
 static VEX_SampleClass vexsamplesC;
 static BucketSize bucketSize = {0,0};
 static bool bucketSizeSet = 0;
+static ut_thread_id_t mainThreadId = 0;
 
 
 int VEX_Samples_create(const int& thread_id)
 {
     std::lock_guard<std::mutex> guard(automattes_mutex);
-    VEX_Samples::const_iterator it = vexsamples.find(thread_id);
-    if(it == vexsamples.end()) {
-        BucketQueue queue;
-    	SampleBucket bucket;	
-    	vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
-        vexsamples[thread_id].push_back(bucket);
-        //debug
-        vexBucketCounter.insert(std::pair<int, int>(thread_id, 0));
-        vrayBucketCounter.insert(std::pair<int, int>(thread_id, 0));
+    const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
+
+    if (currentMainThreadId != mainThreadId) {
+        vexsamples.clear();
+        mainThreadId = currentMainThreadId;
     }
+
+    VEX_Samples::const_iterator it;
+    it = vexsamples.find(thread_id);
+
+    if(it != vexsamples.end())
+        return thread_id;
+
+    BucketQueue queue;
+    SampleBucket bucket;    
+    vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
+    vexsamples[thread_id].push_back(bucket);
+    //debug
+    vexBucketCounter.insert(std::pair<int, int>(thread_id, 0));
+    vrayBucketCounter.insert(std::pair<int, int>(thread_id, 0));
+
     return thread_id;
 } 
 

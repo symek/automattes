@@ -11,7 +11,7 @@
  
 
 #include <UT/UT_DSOVersion.h>
-#include <UT/UT_Thread.h>
+// #include <UT/UT_Thread.h>
 #include <VEX/VEX_VexOp.h>
 #include <UT/UT_PointGrid.h>
 #include <cstring>
@@ -64,7 +64,8 @@ static void vex_store_open(int argc, void *argv[], void *data)
     int            *result    = (int*)            argv[0];
     const char     *channel   = (const char*)     argv[1];
 
-    const int thread_id = UT_Thread::getMyThreadId();
+    // const int thread_id = UT_Thread::getMyThreadId();
+    const int thread_id = SYSgetSTID();
     result[0] = VEX_Samples_create(thread_id);
 
 }
@@ -77,7 +78,8 @@ static void vex_store_save(int argc, void *argv[], void *data)
     const VEXfloat *id     = (const VEXfloat*) argv[3];
     const VEXfloat *Af     = (const VEXfloat*) argv[4];
 
-    const int thread_id = UT_Thread::getMyThreadId();
+    // const int thread_id = UT_Thread::getMyThreadId();
+    const int thread_id = SYSgetSTID();
     const float thf = static_cast<float>(thread_id);
     Sample sample = {P->x(), P->y(), P->z(), *id, *Af, thf};
     *result = VEX_Samples_insert(*handle, sample);

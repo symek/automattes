@@ -282,7 +282,8 @@ VRAY_AutomatteFilter::filter(
 
     UT_BoundingBox bucketBbox;
 
-    const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
+    // const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
+    const int thread_id = SYSgetSTID();
     const VEX_Samples::const_iterator it = samples->find(thread_id);
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
     
@@ -427,26 +428,28 @@ VRAY_AutomatteFilter::filter(
                         gaussianNorm += (gaussianWeight*entries);
 
                         // TMP pseudo color to check offset:
-                        sample[0] = float(offset) * gaussianWeight;
+                        if (0/*iter.entries()*/) {
+                            sample[0] += float(offset) * gaussianWeight;
+                        } else {
+                            for (;!iter.atEnd(); iter.advance()) {
+                                const size_t idx = iter.getValue();
+                                UT_ASSERT(idx < bucket->size());
+                                const Sample & vexsample = bucket->at(idx);
+                                const float _id =  vexsample[3];
+                                // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
+                                const float coverage = vexsample[4] * gaussianWeight; 
+                                uint seed  = static_cast<uint>(_id);
+                                sample[1] += gaussianWeight * SYSfastRandom(seed);
+                                     seed += 2345;
+                                sample[2] += gaussianWeight * SYSfastRandom(seed); 
 
-                        for (;!iter.atEnd(); iter.advance()) {
-                            const size_t idx = iter.getValue();
-                            UT_ASSERT(idx < bucket->size());
-                            const Sample & vexsample = bucket->at(idx);
-                            const float _id =  vexsample[3];
-                            // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
-                            const float coverage = vexsample[4] * gaussianWeight; 
-                            uint seed  = static_cast<uint>(_id);
-                            sample[1] += gaussianWeight * SYSfastRandom(seed);
-                                 seed += 2345;
-                            sample[2] += gaussianWeight * SYSfastRandom(seed); 
 
-
-                            if (hash_map.find(_id) == hash_map.end()) {
-                                hash_map.insert(std::pair<float, float>(_id, coverage));
-                            }
-                            else {
-                                hash_map[_id] += coverage;
+                                if (hash_map.find(_id) == hash_map.end()) {
+                                    hash_map.insert(std::pair<float, float>(_id, coverage));
+                                }
+                                else {
+                                    hash_map[_id] += coverage;
+                                }
                             }
                         }
 
