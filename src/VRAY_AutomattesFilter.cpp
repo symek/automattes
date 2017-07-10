@@ -278,14 +278,14 @@ VRAY_AutomatteFilter::filter(
     UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
     UT_Vector3 bucket_size = {0,0,0};
     VEX_Samples  * samples = VEX_Samples_get();
-    const SampleBucket * bucket  = nullptr;
+    SampleBucket * bucket  = nullptr;
 
     UT_BoundingBox bucketBbox;
 
     // const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
     const int thread_id = SYSgetSTID();
     const VEX_Samples::const_iterator it = samples->find(thread_id);
-    const int myBucketCounter = 0;//VEX_Samples_increamentBucketCounter(thread_id);
+    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
     
     int offset = 0;
     int bucket_threadid = 0;
@@ -319,8 +319,6 @@ VRAY_AutomatteFilter::filter(
         }
 
         // just check assumtion tmp.
-        if (bucket_threadid != thread_id && bucket_threadid != 0)
-            DEBUG_PRINT("WARNINIG: %i != %i\n", thread_id, bucket_threadid);
         UT_ASSERT(thread_id == bucket_threadid);
         
         // Enlarage bbox a bit, otherwise we won't find anything in it.
@@ -332,6 +330,7 @@ VRAY_AutomatteFilter::filter(
     }
 
 
+    bucket->updateBoundingBox(0.f, 0.f, 0.1f);
     // Point Grid structures/objects (we could use persistand grid per bucket once we move to bucket class)
     UT_Vector3Point accessor(positions, indices);
     UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
@@ -339,7 +338,7 @@ VRAY_AutomatteFilter::filter(
 
     // 
     if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
-        pixelgrid.build(bucketBbox.minvec(), bucketBbox.size(), sourcetodestwidth, sourcetodestheight, 1);
+        pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(), sourcetodestwidth, sourcetodestheight, 1);
     }
 
     UT_Vector3PointQueue *queue;
@@ -358,7 +357,7 @@ VRAY_AutomatteFilter::filter(
      // * - not supported yet.
     const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
-    #if 1
+    #if 0
     UT_BoundingBox sourceBbox;
     UT_Vector3 source_min = {FLT_MAX, FLT_MAX, FLT_MAX};
     UT_Vector3 source_max = {FLT_MIN, FLT_MIN, FLT_MIN};
@@ -411,8 +410,8 @@ VRAY_AutomatteFilter::filter(
 
     sample[0] = bucketBbox.minvec().x();
     sample[1] = bucketBbox.minvec().y();
-    sample[2] = sourceBbox.minvec().x();
-    sample[3] = sourceBbox.minvec().y();
+    sample[2] = bucketBbox.maxvec().x();
+    sample[3] = bucketBbox.maxvec().y();
 
     for (int desty = 0; desty < destheight; ++desty) {
         for (int destx = 0; destx < destwidth; ++destx) {

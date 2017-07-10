@@ -22,7 +22,7 @@ static std::mutex automattes_mutex2;
 static VEX_Samples vexsamples;
 static BucketCounter vexBucketCounter;
 static BucketCounter vrayBucketCounter;
-static VEX_SampleClass vexsamplesC;
+// static VEX_SampleClass vexsamplesC;
 static BucketSize bucketSize = {0,0};
 static bool bucketSizeSet = 0;
 static ut_thread_id_t mainThreadId = 0;
@@ -107,7 +107,7 @@ int VEX_bucketSizeSet() { return bucketSizeSet; }
 
 #if 0
 int 
-VEX_SampleClass::create_channel(const std::string channel)
+VEX_SampleClass::open_channel(const std::string & channel)
 {
 	VEX_Channels::const_iterator it = myChannels.find(channel);
 	if (it == myChannels.end()) {
@@ -116,33 +116,63 @@ VEX_SampleClass::create_channel(const std::string channel)
 		myChannels.insert(std::pair<std::string, VEX_Samples>(channel, samples));
 		return index;
 	} else {
-		return -1;
+		return -1; // TODO: should return an index of a channel;
 	}
 }
 
+int 
+VEX_SampleClass::insert_queue(const std::string & channel, const int & thread_id)
+{
+    // std::lock_guard<std::mutex> guard(automattes_mutex2);
+    VEX_Channels::const_iterator chit = myChannels.find(channel);
+    UT_ASSERT(chit != myChannels.end());
+
+    if (chit == myChannels.end()) {
+        const int result = open_channel(channel);
+        UT_ASSERT(result != -1);
+        if (result == -1)
+            return -1;
+    }
+
+    VEX_Samples & vexsamples  = myChannels.at(channel);
+    VEX_Samples::iterator sit = vexsamples.find(thread_id);
+
+    if (sit == vexsamples.end()) {
+        BucketQueue queue;
+        vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
+        return thread_id;
+    } else {
+        return 0;
+    }
+
+}
+
+
+
 int
-VEX_SampleClass::create_bucket(const int &thread_id, const std::string &channel)
+VEX_SampleClass::insert_bucket(const std::string & channel, const int & thread_id)
 {
 	VEX_Channels::const_iterator chit = myChannels.find(channel);
 	UT_ASSERT(chit != myChannels.end());
-	VEX_Samples samples = chit->second;
-	VEX_Samples::const_iterator sit = samples.find(thread_id);
-	if (sit == samples.end()) {
-		SampleBucket bucket;
-		samples.insert(std::pair<int, SampleBucket>(thread_id, bucket));
-	} 
+	VEX_Samples vexsamples = chit->second;
+	VEX_Samples::const_iterator sit = vexsamples.find(thread_id);
+    UT_ASSERT(sit != vexsamples.end());
+    BucketQueue  & bqueue = vexsamples.at(thread_id);
+    BucketQueue::iterator kt = bqueue.begin();
+    SampleBucket new_bucket;
+    bqueue.insert(kt, new_bucket);
+    return bqueue.size();
 
-	return thread_id;
-}
+ }
 
-int
-VEX_SampleClass::insert_sample(const int &thread_id, const std::string& channel, const Sample& sample)
-{
-	VEX_Channels::const_iterator chit = myChannels.find(channel);
-	VEX_Samples samples = chit->second;
-	VEX_Samples::const_iterator sit = samples.find(thread_id);
+// int
+// VEX_SampleClass::insert_sample(const int &thread_id, const std::string& channel, const Sample& sample)
+// {
+// 	VEX_Channels::const_iterator chit = myChannels.find(channel);
+// 	VEX_Samples samples = chit->second;
+// 	VEX_Samples::const_iterator sit = samples.find(thread_id);
 
-}
+// }
 #endif
 
 } // end of HA_HDK
