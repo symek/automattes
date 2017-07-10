@@ -1,27 +1,28 @@
 /*
+ Partialy taken from HDK examples:
+ http://www.sidefx.com/docs/hdk15.5/_v_r_a_y_2_v_r_a_y__demo_edge_detect_filter_8h-example.html
+
+ Contains snippets from PsyOp
+ [1] - Jonah Friedman, Andrew C. Jones, Fully automatic ID mattes with support for motion blur and transparency.
  */
+//HDK
 #include <UT/UT_DSOVersion.h>
 #include <VRAY/VRAY_SpecialChannel.h>
 #include <UT/UT_Args.h>
 #include <UT/UT_StackBuffer.h>
 #include <SYS/SYS_Floor.h>
 #include <SYS/SYS_Math.h>
-#include <OpenEXR/half.h>
-#include <IMG/IMG_DeepShadow.h>
-#include <IMG/IMG_File.h>
-#include <PXL/PXL_Raster.h>
-#include <PXL/PXL_DeepSampleList.h>
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
 #include <GU/GU_Detail.h>
 
-
+//STD
 #include <iostream>
 #include <map>
-#include <unordered_map>
 #include <memory>
 #include <limits>
 
+//OWN
 #include "VRAY_AutomattesFilter.hpp"
 #include "AutomattesHelper.hpp"
 
@@ -415,6 +416,7 @@ VRAY_AutomatteFilter::filter(
                         const UT_Vector3 position = {sx, sy, 0.f};
                         const float radius = 0.000001f;
 
+
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
                         // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
@@ -423,6 +425,9 @@ VRAY_AutomatteFilter::filter(
                         foundDeepSamples += (iter.entries() - 1);
                         const float repEntries = 1.f/(float)entries; 
                         gaussianNorm += (gaussianWeight*entries);
+
+                        // TMP pseudo color to check offset:
+                        sample[0] = float(offset) * gaussianWeight;
 
                         for (;!iter.atEnd(); iter.advance()) {
                             const size_t idx = iter.getValue();
@@ -436,8 +441,6 @@ VRAY_AutomatteFilter::filter(
                                  seed += 2345;
                             sample[2] += gaussianWeight * SYSfastRandom(seed); 
 
-                            // pseudo color to check offset:
-                            //sample[0] = float(offset);
 
                             if (hash_map.find(_id) == hash_map.end()) {
                                 hash_map.insert(std::pair<float, float>(_id, coverage));

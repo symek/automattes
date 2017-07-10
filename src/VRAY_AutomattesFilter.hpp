@@ -31,8 +31,6 @@ namespace HA_HDK {
 template<typename It>
 inline auto myPointer(It const&it) -> decltype(std::addressof(*it)) { return std::addressof(*it); }
 
-// static const char* plane_names[] = {"CryptoObject",   "CryptoObject00", 
-                                    // "CryptoObject01", "CryptoObject02"};
 
 enum Automatte_HashType {
     MANTRA,
@@ -56,20 +54,6 @@ inline float gaussianFilter(float x, float y, float expv, float alpha) {
     return gaussian(x, expv, alpha) * gaussian(y, expv, alpha);
 }
 
-inline void packFloats(const float a, const float b, float &store) {
-    const half first = half(a); const half second = half(b);
-    int16_t sh1 = *reinterpret_cast<int16_t*>((void*) &first);
-    int16_t sh2 = *reinterpret_cast<int16_t*>((void*) &second);
-    int32_t tmp = ( sh2 << 16) | sh1;
-          store = *reinterpret_cast<float*>((void*)&(tmp)); 
-}
-
-inline void unpackFloats(const float store, float &a, float &b) {
-    int16_t unpack16a = *reinterpret_cast<int16_t*>((void*)&store);
-    int16_t unpack16b = *reinterpret_cast<int32_t*>((void*)&store) >> 16;
-    a = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16a));
-    b = static_cast<float>(*reinterpret_cast<half*>((void*)&unpack16b));
-}
 
 // From Cryptomatte specification[1]
 float hash_to_float(uint32_t hash)
