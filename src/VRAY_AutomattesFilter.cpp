@@ -250,115 +250,17 @@ VRAY_AutomatteFilter::prepFilter(int samplesperpixelx, int samplesperpixely)
     myGaussianExp  = SYSexp(-myGaussianAlpha * myFilterWidth * myFilterWidth);
 }
 
-void
-VRAY_AutomatteFilter::filter(
-    float *destination,
-    int vectorsize,
-    const VRAY_SampleBuffer &source,
-    int channel,
-    int sourcewidth,
-    int sourceheight,
-    int destwidth,
-    int destheight,
-    int destxoffsetinsource,
-    int destyoffsetinsource,
-    const VRAY_Imager &imager) const
+void VRAY_AutomatteFilter::updateSourceBoundingBox(
+    const int & destwidth, 
+    const int & destheight,
+    const int & sourcewidth,
+    const int & sourceheight,
+    const int & destxoffsetinsource,
+    const int & destyoffsetinsource,
+    const int & vectorsize,
+    const float * colordata, 
+    UT_BoundingBox * sourceBbox) const
 {
-
-    UT_ASSERT(vectorsize == 4);
-
-    #ifdef VEXSAMPLES
-    const int sourcetodestwidth  = sourcewidth;// / mySamplesPerPixelX;
-    const int sourcetodestheight = sourceheight;// / mySamplesPerPixelY;
-
-    // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
-    UT_Vector3Array  positions;
-    UT_ValArray<int> indices;
-    UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
-    UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
-    UT_Vector3 bucket_size = {0,0,0};
-    VEX_Samples  * samples = VEX_Samples_get();
-    SampleBucket * bucket  = nullptr;
-
-    UT_BoundingBox bucketBbox;
-
-    // const int thread_id = UT_Thread::getMyThreadId(); // This doesn't work on Mac...?
-    const int thread_id = SYSgetSTID();
-    const VEX_Samples::const_iterator it = samples->find(thread_id);
-    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
-    
-    int offset = 0;
-    int bucket_threadid = 0;
-    int fullbuckets = 0;
-    int foundDeepSamples = 0;
-
-    // find first non empty bucket. this is wrong way
-    // buckets are empty for background, needs to find a way ot find them.
-    if (it != samples->end()) {
-        const BucketQueue  & queue  = samples->at(thread_id);
-        BucketQueue::const_iterator jt = queue.begin();
-        for (; jt != queue.end(); ++jt, ++offset) {
-            if (jt->size() != 0) {
-                bucket = &(*jt);
-                break; 
-            }
-        }
-
-        const size_t size = bucket->size();
-        positions.bumpSize(size);
-        indices.bumpSize(size);
-
-        for (int i=0; i<size; ++i) {
-            const Sample & vexsample = bucket->at(i);
-            const UT_Vector3 pos = {vexsample[0], vexsample[1], 0.f}; // we ommit Pz, to flatten grid.
-            bucket_threadid = static_cast<int>(vexsample[5]);
-            bucket_min = SYSmin(pos, bucket_min); //
-            bucket_max = SYSmax(pos, bucket_max);
-            positions.append(pos);
-            indices.append(i);
-        }
-
-        // just check assumtion tmp.
-        UT_ASSERT(thread_id == bucket_threadid);
-        
-        // Enlarage bbox a bit, otherwise we won't find anything in it.
-        bucket_size = bucket_max - bucket_min;
-        bucket_min.z()  = -.01;
-        bucket_max.z()  =  .01;
-        bucketBbox.initBounds(bucket_min, bucket_max);
-        // bucketBbox.expandBounds(.001f, .001f, 0.f);
-    }
-
-
-    bucket->updateBoundingBox(0.f, 0.f, 0.1f);
-    // Point Grid structures/objects (we could use persistand grid per bucket once we move to bucket class)
-    UT_Vector3Point accessor(positions, indices);
-    UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
-    // pixelgrid = std::unique_ptr<UT_PointGrid<UT_Vector3Point>> (new UT_PointGrid<UT_Vector3Point> (accessor));
-
-    // 
-    if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
-        pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(), sourcetodestwidth, sourcetodestheight, 1);
-    }
-
-    UT_Vector3PointQueue *queue;
-    queue = pixelgrid.createQueue();
-    UT_PointGridIterator<UT_Vector3Point> iter;
-
-    #endif
-    
-    const float *const colordata = getSampleData(source, channel);
-    const float *const Object_ids  = (myHashType == MANTRA) ? \
-        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
-    const float *const Material_ids = (myHashType == MANTRA) ? \
-        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
-
-     // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
-     // * - not supported yet.
-    const int hash_index = (myIdType == OBJECT) ? 1 : 2;
-
-    #if 0
-    UT_BoundingBox sourceBbox;
     UT_Vector3 source_min = {FLT_MAX, FLT_MAX, FLT_MAX};
     UT_Vector3 source_max = {FLT_MIN, FLT_MIN, FLT_MIN};
     for (int desty = 0; desty < destheight; ++desty) 
@@ -402,16 +304,130 @@ VRAY_AutomatteFilter::filter(
 
     source_min.z()  = -.01;
     source_max.z()  =  .01;
-    sourceBbox.initBounds(source_min, source_max);
+    sourceBbox->initBounds(source_min, source_max);
+}
 
+void
+VRAY_AutomatteFilter::filter(
+    float *destination,
+    int vectorsize,
+    const VRAY_SampleBuffer &source,
+    int channel,
+    int sourcewidth,
+    int sourceheight,
+    int destwidth,
+    int destheight,
+    int destxoffsetinsource,
+    int destyoffsetinsource,
+    const VRAY_Imager &imager) const
+{
+
+    UT_ASSERT(vectorsize == 4);
+
+    const float *const colordata = getSampleData(source, channel);
+    const float *const Object_ids  = (myHashType == MANTRA) ? \
+        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
+    const float *const Material_ids = (myHashType == MANTRA) ? \
+        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
+
+     // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
+     // * - not supported yet.
+    const int hash_index = (myIdType == OBJECT) ? 1 : 2;
+
+    #ifdef VEXSAMPLES
+    const int sourcetodestwidth  = sourcewidth;// / mySamplesPerPixelX;
+    const int sourcetodestheight = sourceheight;// / mySamplesPerPixelY;
+
+    // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
+    UT_Vector3Array  positions;
+    UT_ValArray<int> indices;
+    VEX_Samples  * samples = VEX_Samples_get();
+    SampleBucket * bucket  = nullptr;
+
+    int offset = 0;
+    int bucket_threadid = 0;
+    int fullbuckets = 0;
+    int foundDeepSamples = 0;
+
+    // find first non empty bucket. this is wrong way
+    // buckets are empty for background, needs to find a way ot find them.
+    // const VEX_Samples::const_iterator it = samples->find(thread_id);
+    const int thread_id = SYSgetSTID();
+    const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
+
+    UT_BoundingBox sourcebbox;
+    updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
+        destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
+
+    #if 0
+    VEX_getBucket(thread_id, bucket, offset);
+    #else
+    UT_ASSERT(samples->find(thread_id) != samples->end());
+    {
+        const BucketQueue  & queue  = samples->at(thread_id);
+        BucketQueue::const_iterator jt = queue.begin();
+        for (; jt != queue.end(); ++jt, ++offset) {
+            if (jt->size() != 0) {
+                bucket = &(*jt);
+                break; 
+            }
+        }
+    }
+    #endif
+
+    if (offset == 0) {
+        bucket->updateBoundingBox(0.0f, 0.0f, 0.02f);
+    } else {
+        // find lets try to find source:
+        const float xmin = sourcebbox.minvec().x();
+        const float ymax = sourcebbox.minvec().y();
+        // const BucketLine line
+    }
+
+    const size_t size = bucket->size();
+    positions.bumpSize(size);
+    indices.bumpSize(size);
+
+    for (int i=0; i<size; ++i) {
+        const Sample & vexsample = bucket->at(i);
+        const UT_Vector3 pos = {vexsample[0], vexsample[1], 0.f}; // we ommit Pz, to flatten grid.
+        positions.append(pos);
+        indices.append(i);
+    }
+
+    // Point Grid structures/objects (we could use persistand grid per bucket once we move to bucket class)
+    UT_Vector3Point accessor(positions, indices);
+    UT_PointGrid<UT_Vector3Point> pixelgrid(accessor);
+    // pixelgrid = std::unique_ptr<UT_PointGrid<UT_Vector3Point>> (new UT_PointGrid<UT_Vector3Point> (accessor));
+
+    // 
+    if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
+        pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(),\
+         sourcetodestwidth, sourcetodestheight, 1);
+    }
+
+    UT_Vector3PointQueue *queue;
+    queue = pixelgrid.createQueue();
+    UT_PointGridIterator<UT_Vector3Point> iter;
+
+    #endif
+    
+
+    #if 0
     UT_StackBuffer<float> sample(vectorsize);
     for (int i = 0; i < vectorsize; ++i)
         sample[i] = 0.f;
 
-    sample[0] = bucketBbox.minvec().x();
-    sample[1] = bucketBbox.minvec().y();
-    sample[2] = bucketBbox.maxvec().x();
-    sample[3] = bucketBbox.maxvec().y();
+    const float insidemin = sourcebbox.isInside(bucket->getBBox()->minvec());
+    const float insidemax = sourcebbox.isInside(bucket->getBBox()->maxvec());
+    const float distmin = sourcebbox.minvec().distance2(bucket->getBBox()->minvec());
+    const float distmax = sourcebbox.maxvec().distance2(bucket->getBBox()->maxvec()); 
+
+    // sourcebbox.isInside(*(bucket->getBBox()));
+    sample[0] = distmin;// 1.f * insidemin * insidemax; //bucket->getBBox()->minvec().x();
+    sample[1] = distmax;//bucket->getBBox()->minvec().y();
+    sample[2] = sourcebbox.minvec().x();
+    sample[3] = sourcebbox.minvec().y();
 
     for (int desty = 0; desty < destheight; ++desty) {
         for (int destx = 0; destx < destwidth; ++destx) {
@@ -592,7 +608,7 @@ VRAY_AutomatteFilter::filter(
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i)\n", \
-        thread_id, myBucketCounter, bucket->size(), offset, sourcetodestwidth, sourcetodestheight, foundDeepSamples);
+        thread_id, myBucketCounter, bucket->size(), offset, destwidth, destheight, foundDeepSamples);
     // BucketQueue  & bqueue = samples->at(thread_id);
     // BucketQueue::iterator kt = bqueue.begin();
     // SampleBucket new_bucket;

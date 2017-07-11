@@ -15,30 +15,15 @@ typedef std::vector<Sample> SampleBucketV;
 class SampleBucket
 {
 public:
-	size_t size() const { return mySamples.size(); }
-	const Sample & at(const int & index) const { return mySamples.at(index);}
-	void push_back(const Sample & sample) { mySamples.push_back(sample); }
-	void updateBoundingBox(const float & expx, const float & expy, const float & expz) 
-	{
-		UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
-    	UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
-    	const size_t size = mySamples.size();
-    	for(int i=0; i < size; ++i) {
-    		const Sample sample = mySamples.at(i);
-    		const UT_Vector3 position = {sample[0], sample[1], 0.f};
-    		bucket_min = SYSmin(bucket_min, position);
-    		bucket_max = SYSmax(bucket_max, position);
-    	}
-
-    	// bucket_min.z() = expz * -1.0f;
-        // bucket_max.z() = expz;
-    	myBbox.initBounds(bucket_min, bucket_max);
-    	myBbox.expandBounds(expx, expy, expz);
-	}
-	const UT_BoundingBox * getBBox() const { return &myBbox; }
+    size_t size() const { return mySamples.size(); }
+    const Sample & at(const int & index) const { return mySamples.at(index);}
+    const UT_BoundingBox * getBBox() const { return &myBbox; }
+    void push_back(const Sample & sample) { mySamples.push_back(sample); }
+    void updateBoundingBox(const float &, const float &, const float &);
 private:
-	SampleBucketV mySamples;
-	UT_BoundingBox myBbox;
+    SampleBucketV mySamples;
+    UT_BoundingBox myBbox;
+    int myFinishedFlag = 0;
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
@@ -49,6 +34,12 @@ typedef std::map<std::string, VEX_Samples> VEX_Channels;
 typedef std::map<int, int> BucketCounter;
 // main storage container.
 typedef std::array<int, 2> BucketSize;
+
+//
+typedef float Xmin;
+typedef float Ymin;
+typedef std::map<Xmin, SampleBucket*> BucketLine;
+typedef std::map<Ymin, BucketLine> BucketGrid;
 
 
 // pointgrid stuff useful for buliding filter side accesor.
@@ -64,6 +55,7 @@ int VEX_Samples_increamentBucketCounter(const int&);
 BucketSize * VEX_getBucketSize();
 void VEX_setBucketSize(int x, int y);
 int VEX_bucketSizeSet();
+int VEX_getBucket(const int &, SampleBucket *, int &);
 
 } // end of HA_HDK Space
 
