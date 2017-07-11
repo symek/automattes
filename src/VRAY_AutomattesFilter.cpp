@@ -374,13 +374,15 @@ VRAY_AutomatteFilter::filter(
         }
     }
     #endif
-
+    int bucketgridsize = 0;
     if (offset == 0) {
-        bucket->updateBoundingBox(0.0f, 0.0f, 0.02f);
+        bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
     } else {
         // find lets try to find source:
-        const float xmin = sourcebbox.minvec().x();
-        const float ymax = sourcebbox.minvec().y();
+        const float xmax = sourcebbox.maxvec().x();
+        const float ymax = sourcebbox.maxvec().y();
+        const UT_Vector3 xymax = {xmax, ymax, 0.f};
+
         // const BucketLine line
     }
 
@@ -607,8 +609,8 @@ VRAY_AutomatteFilter::filter(
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
-    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i)\n", \
-        thread_id, myBucketCounter, bucket->size(), offset, destwidth, destheight, foundDeepSamples);
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i) (bucketgrid: %i)\n", \
+        thread_id, myBucketCounter, bucket->size(), offset, destwidth, destheight, foundDeepSamples, bucketgridsize);
     // BucketQueue  & bqueue = samples->at(thread_id);
     // BucketQueue::iterator kt = bqueue.begin();
     // SampleBucket new_bucket;

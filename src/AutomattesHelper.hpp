@@ -19,7 +19,9 @@ public:
     const Sample & at(const int & index) const { return mySamples.at(index);}
     const UT_BoundingBox * getBBox() const { return &myBbox; }
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
-    void updateBoundingBox(const float &, const float &, const float &);
+    int updateBoundingBox(const float &, const float &, const float &);
+    void registerBucket() const;
+    void findBuckets(const UT_BoundingBox&) const;
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;
@@ -36,10 +38,10 @@ typedef std::map<int, int> BucketCounter;
 typedef std::array<int, 2> BucketSize;
 
 //
-typedef float Xmin;
-typedef float Ymin;
-typedef std::map<Xmin, SampleBucket*> BucketLine;
-typedef std::map<Ymin, BucketLine> BucketGrid;
+typedef float Xmax;
+typedef float Ymax;
+typedef std::map<Xmax, SampleBucket*> BucketLine;
+typedef std::map<Ymax, BucketLine> BucketGrid;
 
 
 // pointgrid stuff useful for buliding filter side accesor.

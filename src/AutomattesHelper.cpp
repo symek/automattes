@@ -107,39 +107,50 @@ void VEX_setBucketSize(int x, int y) {
 int VEX_bucketSizeSet() { return bucketSizeSet; }
 
 
-void SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
-    {
-        std::lock_guard<std::mutex> guard(automattes_mutex2);
-        UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
-        UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
-        const size_t size = mySamples.size();
-        for(int i=0; i < size; ++i) {
-            const Sample sample = mySamples.at(i);
-            const UT_Vector3 position = {sample[0], sample[1], 0.f};
-            bucket_min = SYSmin(bucket_min, position);
-            bucket_max = SYSmax(bucket_max, position);
-        }
-        myBbox.initBounds(bucket_min, bucket_max);
-        myBbox.expandBounds(expx, expy, expz);
-        // update BucketGrid;
-        const Xmin xmin = bucket_min.x();
-        const Ymin ymin = bucket_min.y();
-        BucketGrid::iterator it = bucketGrid.find(ymin);
-        if (it == bucketGrid.end()) {
-            BucketLine line;
-            line.insert(std::pair<Xmin, SampleBucket*>(xmin, this));
-            bucketGrid.insert(std::pair<Ymin, BucketLine>(ymin, line));
-        } else {
-            BucketLine line = it->second;
-            BucketLine::const_iterator jt = line.find(xmin);
-            if (jt == line.end()) {
-                line.insert(std::pair<Xmin, SampleBucket*>(xmin, this));
-            }
-        }
-
-        myFinishedFlag = 1;
+int SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
+{
+    UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
+    UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
+    const size_t size = mySamples.size();
+    for(int i=0; i < size; ++i) {
+        const Sample sample = mySamples.at(i);
+        const UT_Vector3 position = {sample[0], sample[1], 0.f};
+        bucket_min = SYSmin(bucket_min, position);
+        bucket_max = SYSmax(bucket_max, position);
     }
+    myBbox.initBounds(bucket_min, bucket_max);
+    myBbox.expandBounds(expx, expy, expz);
+    registerBucket();
+    myFinishedFlag = 1;
+    return bucketGrid.size();
+}
 
+void SampleBucket::registerBucket() const 
+{
+    // update BucketGrid;
+    std::lock_guard<std::mutex> guard(automattes_mutex2);
+    const Xmax xmax = myBbox.maxvec().x();
+    const Ymax ymax = myBbox.maxvec().y();
+    BucketGrid::const_iterator it = bucketGrid.find(ymax);
+    if (it == bucketGrid.end()) {
+        BucketLine line;
+        line.insert(std::pair<Xmax, SampleBucket*>(xmax, this));
+        bucketGrid.insert(std::pair<Ymax, BucketLine>(ymax, line));
+    } else {
+        BucketLine line = it->second;
+        BucketLine::const_iterator jt = line.find(xmax);
+        if (jt == line.end()) {
+            line.insert(std::pair<Xmax, SampleBucket*>(xmax, this));
+        }
+    }
+}
+
+// void SampleBucket::findBuckets(const UT_BoudingBox & bbox) const 
+// {
+// 	std::lock_guard<std::mutex> guard(automattes_mutex2);
+	
+
+// }
 
 int VEX_getBucket(const int & thread_id, SampleBucket * bucket, int & offset)
 {
