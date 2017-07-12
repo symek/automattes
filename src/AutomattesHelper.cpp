@@ -145,12 +145,25 @@ void SampleBucket::registerBucket() const
     }
 }
 
-// void SampleBucket::findBuckets(const UT_BoudingBox & bbox) const 
-// {
-// 	std::lock_guard<std::mutex> guard(automattes_mutex2);
+void SampleBucket::findBucket(const float & xmax, const float & ymax, SampleBucket * bucket) const 
+{
+	std::lock_guard<std::mutex> guard(automattes_mutex2);
 	
-
-// }
+    // const UT_Vector3 xymax = {xmax, ymax, 0.f};
+	const BucketGrid::const_iterator it = bucketGrid.begin();
+    for (; it!= bucketGrid.end(); ++it) {
+        if (it->first >= ymax) {
+            BucketLine & line = it->second;
+            BucketLine::const_iterator jt = line.begin();
+            for (; jt != line.end(); ++jt) {
+                if(jt->first >= xmax) {
+                    bucket = static_cast<SampleBucket*>(jt->second);
+                }
+            } 
+            
+        }
+    }
+}
 
 int VEX_getBucket(const int & thread_id, SampleBucket * bucket, int & offset)
 {

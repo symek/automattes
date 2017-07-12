@@ -21,7 +21,7 @@ public:
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
     int updateBoundingBox(const float &, const float &, const float &);
     void registerBucket() const;
-    void findBuckets(const UT_BoundingBox&) const;
+    void findBucket(const float & xmax, const float & ymax, SampleBucket *) const;
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;

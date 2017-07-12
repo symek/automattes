@@ -381,9 +381,7 @@ VRAY_AutomatteFilter::filter(
         // find lets try to find source:
         const float xmax = sourcebbox.maxvec().x();
         const float ymax = sourcebbox.maxvec().y();
-        const UT_Vector3 xymax = {xmax, ymax, 0.f};
-
-        // const BucketLine line
+        bucket->findBucket(xmax, ymax, bucket);
     }
 
     const size_t size = bucket->size();
