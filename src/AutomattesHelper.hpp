@@ -38,10 +38,9 @@ typedef std::map<int, int> BucketCounter;
 typedef std::array<int, 2> BucketSize;
 
 //
-typedef float Xmax;
-typedef float Ymax;
-typedef std::map<Xmax, SampleBucket*> BucketLine;
-typedef std::map<Ymax, BucketLine> BucketGrid;
+typedef float coord_t;
+typedef std::vector<SampleBucket*>    BucketLine;
+typedef std::map<coord_t, BucketLine> BucketGrid;
 
 
 // pointgrid stuff useful for buliding filter side accesor.
@@ -57,7 +56,7 @@ int VEX_Samples_increamentBucketCounter(const int&);
 BucketSize * VEX_getBucketSize();
 void VEX_setBucketSize(int x, int y);
 int VEX_bucketSizeSet();
-int VEX_getBucket(const int &, SampleBucket *, int &);
+int VEX_getBucket(const int, SampleBucket *, int &);
 
 } // end of HA_HDK Space
 

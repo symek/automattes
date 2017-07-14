@@ -20,7 +20,10 @@ static std::mutex automattes_mutex;
 static std::mutex automattes_mutex2;
 // our main storage
 static VEX_Samples vexsamples;
-static BucketGrid bucketGrid;
+// 
+static BucketGrid bucketGridX;
+static BucketGrid bucketGridY;
+//
 static BucketCounter vexBucketCounter;
 static BucketCounter vrayBucketCounter;
 // static VEX_SampleClass vexsamplesC;
@@ -73,7 +76,7 @@ int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 
 void VEX_Samples_insertBucket(const int & thread_id)
 {
-    std::lock_guard<std::mutex> guard(automattes_mutex2);
+    std::lock_guard<std::mutex> guard(automattes_mutex);
     BucketQueue  & bqueue = vexsamples.at(thread_id);
     BucketQueue::iterator kt = bqueue.begin();
     SampleBucket new_bucket;
@@ -96,7 +99,7 @@ BucketSize * VEX_getBucketSize() {
 }
 
 void VEX_setBucketSize(int x, int y) {
-	std::lock_guard<std::mutex> guard(automattes_mutex2);
+	std::lock_guard<std::mutex> guard(automattes_mutex);
 	if (bucketSize[0] != 0 || bucketSize[1] != 0) 
 		return;
 	
@@ -128,7 +131,7 @@ int SampleBucket::updateBoundingBox(const float & expx, const float & expy, cons
 void SampleBucket::registerBucket() const 
 {
     // update BucketGrid;
-    std::lock_guard<std::mutex> guard(automattes_mutex2);
+    std::lock_guard<std::mutex> guard(automattes_mutex);
     const Xmax xmax = myBbox.maxvec().x();
     const Ymax ymax = myBbox.maxvec().y();
     BucketGrid::const_iterator it = bucketGrid.find(ymax);
@@ -145,19 +148,23 @@ void SampleBucket::registerBucket() const
     }
 }
 
-void SampleBucket::findBucket(const float & xmax, const float & ymax, SampleBucket * bucket) const 
+void SampleBucket::findBucket(const float & xmin, const float & ymin, 
+    const float & xmax, const float & ymax, SampleBucket * bucket) const 
 {
-	std::lock_guard<std::mutex> guard(automattes_mutex2);
-	
-    // const UT_Vector3 xymax = {xmax, ymax, 0.f};
+	std::lock_guard<std::mutex> guard(automattes_mutex);
 	const BucketGrid::const_iterator it = bucketGrid.begin();
     for (; it!= bucketGrid.end(); ++it) {
-        if (it->first >= ymax) {
-            BucketLine & line = it->second;
+        if (it->first <= ymax) {
+            const BucketLine & line = it->second;
             BucketLine::const_iterator jt = line.begin();
             for (; jt != line.end(); ++jt) {
-                if(jt->first >= xmax) {
+                if(jt->first <= xmax) {
+                    // std::cout << "selecting new bucket\n";
+                    jt++;
+                    if (jt == line.end())
+                        jt--;
                     bucket = static_cast<SampleBucket*>(jt->second);
+                    break;
                 }
             } 
             
@@ -165,18 +172,21 @@ void SampleBucket::findBucket(const float & xmax, const float & ymax, SampleBuck
     }
 }
 
-int VEX_getBucket(const int & thread_id, SampleBucket * bucket, int & offset)
+int VEX_getBucket(const int thread_id, SampleBucket * bucket, int & offset)
 {
-    UT_ASSERT(vexsamples.find(thread_id) != vexsamples.end());
-    const BucketQueue & queue = vexsamples.at(thread_id);
+    std::lock_guard<std::mutex> guard(automattes_mutex);
+    // UT_ASSERT(vexsamples.find(thread_id) != vexsamples.end());
+
+    const BucketQueue  & queue  = vexsamples.at(thread_id);
     BucketQueue::const_iterator jt = queue.begin();
     for (; jt != queue.end(); ++jt, ++offset) {
-        if (jt->size() != 0) 
-            bucket = &(*jt); 
-            return 1;
+        if (jt->size() != 0) {
+            bucket = &(*jt);
+            break; 
+        }
     }
 
-    return 0;
+    return offset;
 }
 
 #if 0

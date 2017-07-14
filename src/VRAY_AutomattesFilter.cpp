@@ -360,7 +360,8 @@ VRAY_AutomatteFilter::filter(
         destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
 
     #if 0
-    VEX_getBucket(thread_id, bucket, offset);
+    const int q = VEX_getBucket(thread_id, bucket, offset);
+    std::cout << "q: " << bucket << "\n";
     #else
     UT_ASSERT(samples->find(thread_id) != samples->end());
     {
@@ -379,9 +380,17 @@ VRAY_AutomatteFilter::filter(
         bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
     } else {
         // find lets try to find source:
+        const float xmin = sourcebbox.minvec().x();
+        const float ymin = sourcebbox.minvec().y();
         const float xmax = sourcebbox.maxvec().x();
         const float ymax = sourcebbox.maxvec().y();
-        bucket->findBucket(xmax, ymax, bucket);
+        
+        const SampleBucket * oldbucket  = bucket;
+        bucket->findBucket(xmin, ymin, xmax, ymax, bucket);
+
+        if (oldbucket != bucket)
+            DEBUG_PRINT("%i,\n", bucket);
+        
     }
 
     const size_t size = bucket->size();
