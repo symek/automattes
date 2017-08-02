@@ -348,6 +348,7 @@ VRAY_AutomatteFilter::filter(
     int bucket_threadid = 0;
     int fullbuckets = 0;
     int foundDeepSamples = 0;
+    int bucketgridsize = 0;
 
     // find first non empty bucket. this is wrong way
     // buckets are empty for background, needs to find a way ot find them.
@@ -359,10 +360,8 @@ VRAY_AutomatteFilter::filter(
     updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
         destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
 
-    #if 0
-    const int q = VEX_getBucket(thread_id, bucket, offset);
-    std::cout << "q: " << bucket << "\n";
-    #else
+    // const int q = VEX_getBucket(thread_id, bucket, offset);
+    // std::cout << "q: " << bucket << "\n";
     UT_ASSERT(samples->find(thread_id) != samples->end());
     {
         const BucketQueue  & queue  = samples->at(thread_id);
@@ -374,8 +373,6 @@ VRAY_AutomatteFilter::filter(
             }
         }
     }
-    #endif
-    int bucketgridsize = 0;
     if (offset == 0) {
         bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
     } else {
@@ -392,6 +389,7 @@ VRAY_AutomatteFilter::filter(
             DEBUG_PRINT("%i,\n", bucket);
         
     }
+    
 
     const size_t size = bucket->size();
     positions.bumpSize(size);

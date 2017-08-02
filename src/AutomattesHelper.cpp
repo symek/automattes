@@ -21,7 +21,7 @@ static std::mutex automattes_mutex2;
 // our main storage
 static VEX_Samples vexsamples;
 // 
-static BucketGrid bucketGridX;
+static BucketGrid bucketGrid;
 static BucketGrid bucketGridY;
 //
 static BucketCounter vexBucketCounter;
@@ -132,18 +132,18 @@ void SampleBucket::registerBucket() const
 {
     // update BucketGrid;
     std::lock_guard<std::mutex> guard(automattes_mutex);
-    const Xmax xmax = myBbox.maxvec().x();
-    const Ymax ymax = myBbox.maxvec().y();
+    const coord_t xmax = myBbox.maxvec().x();
+    const coord_t ymax = myBbox.maxvec().y();
     BucketGrid::const_iterator it = bucketGrid.find(ymax);
     if (it == bucketGrid.end()) {
         BucketLine line;
-        line.insert(std::pair<Xmax, SampleBucket*>(xmax, this));
-        bucketGrid.insert(std::pair<Ymax, BucketLine>(ymax, line));
+        line.push_back(std::pair<coord_t, SampleBucket*>(xmax, this));
+        bucketGrid.insert(std::pair<coord_t, BucketLine>(ymax, line));
     } else {
         BucketLine line = it->second;
         BucketLine::const_iterator jt = line.find(xmax);
         if (jt == line.end()) {
-            line.insert(std::pair<Xmax, SampleBucket*>(xmax, this));
+            line.insert(std::pair<coord_t, SampleBucket*>(xmax, this));
         }
     }
 }
