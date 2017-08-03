@@ -349,6 +349,7 @@ VRAY_AutomatteFilter::filter(
     int fullbuckets = 0;
     int foundDeepSamples = 0;
     int bucketgridsize = 0;
+    int bucketsFoundInStore = 0;
 
     // find first non empty bucket. this is wrong way
     // buckets are empty for background, needs to find a way ot find them.
@@ -377,25 +378,30 @@ VRAY_AutomatteFilter::filter(
         bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
     } else {
         // find lets try to find source:
-        const float xmin = sourcebbox.minvec().x();
-        const float ymin = sourcebbox.minvec().y();
-        const float xmax = sourcebbox.maxvec().x();
-        const float ymax = sourcebbox.maxvec().y();
+        // const float xmin = sourcebbox.minvec().x();
+        // const float ymin = sourcebbox.minvec().y();
+        // const float xmax = sourcebbox.maxvec().x();
+        // const float ymax = sourcebbox.maxvec().y();
+        const UT_Vector3 min = sourcebbox.minvec();
+        const UT_Vector3 max = sourcebbox.maxvec();
         
-        const SampleBucket * oldbucket  = bucket;
-        bucket->findBucket(xmin, ymin, xmax, ymax, bucket);
+        // const SampleBucket * oldbucket  = bucket;
+        bucketsFoundInStore = bucket->findBucket(min, max, bucket);
 
-        if (oldbucket != bucket)
-            DEBUG_PRINT("%i,\n", bucket);
+        // if (bucketsFoundInStore != 0)
+        //     DEBUG_PRINT("Suspected buckets: %i\n",bucketsFoundInStore);
+
+        // if (oldbucket != bucket)
+        //     DEBUG_PRINT("%i,\n", bucket);
         
     }
     
 
-    const size_t size = bucket->size();
-    positions.bumpSize(size);
-    indices.bumpSize(size);
+    const size_t bucket_size = bucket->size() + bucket->getNeighbourSize();
+    positions.bumpSize(bucket_size);
+    indices.bumpSize(bucket_size);
 
-    for (int i=0; i<size; ++i) {
+    for (int i=0; i<bucket_size; ++i) {
         const Sample & vexsample = bucket->at(i);
         const UT_Vector3 pos = {vexsample[0], vexsample[1], 0.f}; // we ommit Pz, to flatten grid.
         positions.append(pos);
@@ -520,7 +526,7 @@ VRAY_AutomatteFilter::filter(
                         } else {
                             for (;!iter.atEnd(); iter.advance()) {
                                 const size_t idx = iter.getValue();
-                                UT_ASSERT(idx < bucket->size());
+                                UT_ASSERT(idx < bucket_size);
                                 const Sample & vexsample = bucket->at(idx);
                                 const float _id =  vexsample[3];
                                 // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
@@ -614,13 +620,14 @@ VRAY_AutomatteFilter::filter(
     #ifdef VEXSAMPLES 
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
-    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i) (bucketgrid: %i)\n", \
-        thread_id, myBucketCounter, bucket->size(), offset, destwidth, destheight, foundDeepSamples, bucketgridsize);
+    DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i), (bucketgrid: %i), (neighbours: %i)\n", \
+        thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucket->getNeighbourSize());
     // BucketQueue  & bqueue = samples->at(thread_id);
     // BucketQueue::iterator kt = bqueue.begin();
     // SampleBucket new_bucket;
     // bqueue.insert(kt, new_bucket);
     // bucket.clear();
+    bucket->clearNeighbours();
     VEX_Samples_insertBucket(thread_id);
     #endif
 

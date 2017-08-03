@@ -15,18 +15,24 @@ typedef std::vector<Sample> SampleBucketV;
 class SampleBucket
 {
 public:
-    size_t size() const { return mySamples.size(); }
-    const Sample & at(const int & index) const { return mySamples.at(index);}
+    const size_t size() const { return mySamples.size(); }
+    const size_t getNeighbourSize() const ;
+    const Sample & at(const int & index) const;
     const UT_BoundingBox * getBBox() const { return &myBbox; }
+    const SampleBucketV & getMySamples() const { return mySamples; }
+    void clearNeighbours();
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
     int updateBoundingBox(const float &, const float &, const float &);
     void registerBucket() const;
+    int  findBucket(const UT_Vector3 &, const UT_Vector3 &, SampleBucket *);
     void findBucket(const float &, const float &, 
         const float &, const float &, SampleBucket *) const;
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;
     int myFinishedFlag = 0;
+    SampleBucketV myNeighbours;
+    size_t myNeighbourSize = 0;
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
@@ -40,8 +46,8 @@ typedef std::array<int, 2> BucketSize;
 
 //
 typedef float coord_t;
-typedef std::vector<SampleBucket*>    BucketLine;
-typedef std::map<coord_t, BucketLine> BucketGrid;
+typedef std::vector<SampleBucket*>    BucketVector;
+// typedef std::map<coord_t, SampleBucket*> BucketGrid;
 
 
 // pointgrid stuff useful for buliding filter side accesor.

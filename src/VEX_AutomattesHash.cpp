@@ -14,6 +14,8 @@
 // #include <UT/UT_Thread.h>
 #include <VEX/VEX_VexOp.h>
 #include <UT/UT_PointGrid.h>
+#include <UT/UT_BoundingBox.h>
+
 #include <cstring>
 
 #include "MurmurHash3.h"
