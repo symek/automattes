@@ -302,10 +302,8 @@ void VRAY_AutomatteFilter::updateSourceBoundingBox(
         }
     }
 
-    // source_min.z()  = -.01;
-    // source_max.z()  =  .01;
     sourceBbox->initBounds(source_min, source_max);
-    sourceBbox->expandBounds(0.0f, 0.0f, 0.01f);
+    sourceBbox->expandBounds(0.f, 0.f, 0.001f);
 }
 
 void
@@ -352,13 +350,9 @@ VRAY_AutomatteFilter::filter(
     int bucketgridsize = 0;
     int bucketsFoundInStore = 0;
 
-    // find first non empty bucket. this is wrong way
-    // buckets are empty for background, needs to find a way ot find them.
-    // const VEX_Samples::const_iterator it = samples->find(thread_id);
+
     const int thread_id = SYSgetSTID();
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
-
-    // const int q = VEX_getBucket(thread_id, bucket, offset);
 
     UT_ASSERT(samples->find(thread_id) != samples->end());
     {
@@ -374,22 +368,19 @@ VRAY_AutomatteFilter::filter(
     }
 
     UT_BoundingBox sourcebbox;
+    updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
+    destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
     if (bucket->size() != 0/* && bucket->isRegistered() == 1*/) {
-        bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
+        bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
+        bucketgridsize = bucket->registerBucket();
     } else {
-        updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
-        destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
-        
         const UT_Vector3 source_min = sourcebbox.minvec();
         const UT_Vector3 source_max = sourcebbox.maxvec();
-        
-        bucketsFoundInStore = bucket->findBucket(source_min, source_max, bucket);
-        
+        bucketsFoundInStore = bucket->fillBucket(source_min, source_max, bucket);
     }
     
 
-    const size_t bucket_size = bucket->size() + bucket->getNeighbourSize();
-    // DEBUG_PRINT("neighbours versus own samples: %i / %i,\n", bucket_size, bucket->size());
+    const size_t bucket_size = bucket->size();
     positions.bumpSize(bucket_size);
     indices.bumpSize(bucket_size);
 
@@ -418,39 +409,11 @@ VRAY_AutomatteFilter::filter(
     #endif
     
 
-    #if 0
-    UT_StackBuffer<float> sample(vectorsize);
-    for (int i = 0; i < vectorsize; ++i)
-        sample[i] = 0.f;
-
-    const float insidemin = sourcebbox.isInside(bucket->getBBox()->minvec());
-    const float insidemax = sourcebbox.isInside(bucket->getBBox()->maxvec());
-    const float distmin = sourcebbox.minvec().distance2(bucket->getBBox()->minvec());
-    const float distmax = sourcebbox.maxvec().distance2(bucket->getBBox()->maxvec()); 
-
-    // sourcebbox.isInside(*(bucket->getBBox()));
-    sample[0] = distmin;// 1.f * insidemin * insidemax; //bucket->getBBox()->minvec().x();
-    sample[1] = distmax;//bucket->getBBox()->minvec().y();
-    sample[2] = sourcebbox.minvec().x();
-    sample[3] = sourcebbox.minvec().y();
-
-    for (int desty = 0; desty < destheight; ++desty) {
-        for (int destx = 0; destx < destwidth; ++destx) {
-             for (int i = 0; i< vectorsize; ++i, ++destination)
-                    *destination  = sample[i];
-        }
-    }
-
-
-    #else
     // Run over destination pixels
     for (int desty = 0; desty < destheight; ++desty) 
     {
-        // const int pixelgridoffsety = (destyoffsetinsource/mySamplesPerPixelY) + desty;
-
         for (int destx = 0; destx < destwidth; ++destx)
         {
-            // const int pixelgridoffsetx = (destxoffsetinsource/mySamplesPerPixelX) + destx;
             // First, compute the sample bounds of the pixel
             const int sourcefirstx = destxoffsetinsource + destx*mySamplesPerPixelX;
             const int sourcefirsty = destyoffsetinsource + desty*mySamplesPerPixelY;
@@ -468,11 +431,9 @@ VRAY_AutomatteFilter::filter(
             int sourcelastrx = sourcelastox;
             int sourcelastry = sourcelastoy;
           
-            
             UT_StackBuffer<float> sample(vectorsize);
             for (int i = 0; i < vectorsize; ++i)
                 sample[i] = 0.f;
-
 
             HashMap hash_map;
             float gaussianNorm = 0;
@@ -500,11 +461,11 @@ VRAY_AutomatteFilter::filter(
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
                         const UT_Vector3 position = {sx, sy, 0.f};
-                        const float radius = 0.000001f;
-
+                        const float radius = 0.0001f;//?
 
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
+                        // idx = destx; idx = desty; idz = 1;
                         // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
                         iter = pixelgrid.findCloseKeys(position, *queue, radius);
                         const int entries = SYSmax((float)iter.entries(), 1.f);
@@ -514,7 +475,7 @@ VRAY_AutomatteFilter::filter(
 
                         // TMP pseudo color to check offset:
                         if (iter.entries() == 0) {
-                            sample[0] += float(offset) * gaussianWeight;
+                            sample[0] += /*float(offset)*/1.f * gaussianWeight;
                         } else {
                             for (;!iter.atEnd(); iter.advance()) {
                                 const size_t idx = iter.getValue();
@@ -607,20 +568,15 @@ VRAY_AutomatteFilter::filter(
         }
     }
 
-    #endif
 
-    #ifdef VEXSAMPLES 
     // end of destx/desty loop;
+    #ifdef VEXSAMPLES 
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i), (bucketgrid: %i), (neighbours: %i)\n", \
         thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucketsFoundInStore);
-    // BucketQueue  & bqueue = samples->at(thread_id);
-    // BucketQueue::iterator kt = bqueue.begin();
-    // SampleBucket new_bucket;
-    // bqueue.insert(kt, new_bucket);
-    // bucket.clear();
-    // bucket->clearNeighbours();
+   
     VEX_Samples_insertBucket(thread_id);
+
     #endif
 
 
