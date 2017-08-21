@@ -334,8 +334,6 @@ VRAY_AutomatteFilter::filter(
     const int hash_index = (myIdType == OBJECT) ? 1 : 2;
 
     #ifdef VEXSAMPLES
-    const int sourcetodestwidth  = sourcewidth;// / mySamplesPerPixelX;
-    const int sourcetodestheight = sourceheight;// / mySamplesPerPixelY;
 
     // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
@@ -359,18 +357,19 @@ VRAY_AutomatteFilter::filter(
         const BucketQueue  & queue  = samples->at(thread_id);
         BucketQueue::const_iterator jt = queue.begin();
         bucket = &(*jt);
-        // for (; jt != queue.end(); ++jt, ++offset) {
-        //     if (jt->size() != 0) {
-        //         // bucket = &(*jt);
-        //         break; 
-        //     }
-        // }
+        for (; jt != queue.end(); ++jt, ++offset) {
+            if (jt->size() != 0) {
+                // bucket = &(*jt);
+                break; 
+            }
+        }
     }
 
     UT_BoundingBox sourcebbox;
     updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
-    destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
-    if (bucket->size() != 0/* && bucket->isRegistered() == 1*/) {
+        destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
+
+    if (bucket->size() != 0 && bucket->isRegistered() == 0) {
         bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
         bucketgridsize = bucket->registerBucket();
     } else {
@@ -397,9 +396,9 @@ VRAY_AutomatteFilter::filter(
     // pixelgrid = std::unique_ptr<UT_PointGrid<UT_Vector3Point>> (new UT_PointGrid<UT_Vector3Point> (accessor));
 
     // 
-    if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
-        // pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(),sourcetodestwidth, sourcetodestheight, 1);
-         pixelgrid.build(sourcebbox.minvec(), sourcebbox.size(),sourcetodestwidth, sourcetodestheight, 1);
+    if (pixelgrid.canBuild(sourcewidth, sourceheight, 1)) {
+        // pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(),sourcewidth, sourceheight, 1);
+         pixelgrid.build(sourcebbox.minvec(), sourcebbox.size(),sourcewidth, sourceheight, 1);
     }
 
     UT_Vector3PointQueue *queue;
@@ -461,11 +460,11 @@ VRAY_AutomatteFilter::filter(
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
                         const UT_Vector3 position = {sx, sy, 0.f};
-                        const float radius = 0.0001f;//?
+                        const float radius = 0.0000001f;//?
 
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
-                        // idx = destx; idx = desty; idz = 1;
+                        // idx = sourcefirstx; idx = sourcefirsty; idz = 0;
                         // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
                         iter = pixelgrid.findCloseKeys(position, *queue, radius);
                         const int entries = SYSmax((float)iter.entries(), 1.f);
