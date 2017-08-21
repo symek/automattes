@@ -10,6 +10,7 @@
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
 #include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_hash_map.h>
 
 #include "AutomattesHelper.hpp"
 
@@ -150,9 +151,13 @@ void SampleBucket::clearNeighbours()
 int SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
+    const size_t size = mySamples.size();
+    // this should never happen;
+    if (size == 0)
+        return -1;
+
     UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
     UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
-    const size_t size = mySamples.size();
     for(int i=0; i < size; ++i) {
         const Sample sample = mySamples.at(i);
         const UT_Vector3 position = {sample[0], sample[1], 0.f};
@@ -162,7 +167,7 @@ int SampleBucket::updateBoundingBox(const float & expx, const float & expy, cons
     myBbox.initBounds(bucket_min, bucket_max);
     myBbox.expandBounds(expx, expy, expz);
     registerBucket();
-    myFinishedFlag = 1;
+    myRegisteredFlag  = 1;
     return bucketVector.size();
 }
 
@@ -205,7 +210,7 @@ int SampleBucket::findBucket(const UT_Vector3 & min, const UT_Vector3 & max, Sam
             size_t size = store.size();
             for(size_t i=0; i < size; ++i) {
                 const Sample & vexsample = store.at(i);
-                myNeighbours.push_back(vexsample);
+                mySamples.push_back(vexsample);
             }
             // SampleBucketV::const_iterator
             // myNeighbourSize += (*it)->getMySamples().size();

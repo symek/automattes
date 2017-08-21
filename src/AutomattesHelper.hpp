@@ -20,6 +20,7 @@ public:
     const Sample & at(const int & index) const;
     const UT_BoundingBox * getBBox() const { return &myBbox; }
     const SampleBucketV & getMySamples() const { return mySamples; }
+    const int isRegistered() const noexcept { return myRegisteredFlag; } 
     void clearNeighbours();
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
     int updateBoundingBox(const float &, const float &, const float &);
@@ -30,13 +31,14 @@ public:
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;
-    int myFinishedFlag = 0;
+    int myRegisteredFlag = 0;
     SampleBucketV myNeighbours;
     size_t myNeighbourSize = 0;
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
 typedef std::map<int, BucketQueue> VEX_Samples;
+// typedef tbb::concurrent_hash_map<int, BucketQueue> VEX_Samples;
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
 
 // storage per channel.

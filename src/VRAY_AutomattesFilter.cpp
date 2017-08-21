@@ -302,9 +302,10 @@ void VRAY_AutomatteFilter::updateSourceBoundingBox(
         }
     }
 
-    source_min.z()  = -.01;
-    source_max.z()  =  .01;
+    // source_min.z()  = -.01;
+    // source_max.z()  =  .01;
     sourceBbox->initBounds(source_min, source_max);
+    sourceBbox->expandBounds(0.0f, 0.0f, 0.01f);
 }
 
 void
@@ -357,42 +358,32 @@ VRAY_AutomatteFilter::filter(
     const int thread_id = SYSgetSTID();
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
 
-    UT_BoundingBox sourcebbox;
-    updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
-        destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
-
     // const int q = VEX_getBucket(thread_id, bucket, offset);
-    // std::cout << "q: " << bucket << "\n";
+
     UT_ASSERT(samples->find(thread_id) != samples->end());
     {
         const BucketQueue  & queue  = samples->at(thread_id);
         BucketQueue::const_iterator jt = queue.begin();
-        for (; jt != queue.end(); ++jt, ++offset) {
-            if (jt->size() != 0) {
-                bucket = &(*jt);
-                break; 
-            }
-        }
+        bucket = &(*jt);
+        // for (; jt != queue.end(); ++jt, ++offset) {
+        //     if (jt->size() != 0) {
+        //         // bucket = &(*jt);
+        //         break; 
+        //     }
+        // }
     }
-    if (offset == 0) {
+
+    UT_BoundingBox sourcebbox;
+    if (bucket->size() != 0/* && bucket->isRegistered() == 1*/) {
         bucketgridsize = bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
     } else {
-        // find lets try to find source:
-        // const float xmin = sourcebbox.minvec().x();
-        // const float ymin = sourcebbox.minvec().y();
-        // const float xmax = sourcebbox.maxvec().x();
-        // const float ymax = sourcebbox.maxvec().y();
-        const UT_Vector3 min = sourcebbox.minvec();
-        const UT_Vector3 max = sourcebbox.maxvec();
+        updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
+        destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
         
-        // const SampleBucket * oldbucket  = bucket;
-        bucketsFoundInStore = bucket->findBucket(min, max, bucket);
-
-        // if (bucketsFoundInStore != 0)
-        //     DEBUG_PRINT("Suspected buckets: %i\n",bucketsFoundInStore);
-
-        // if (oldbucket != bucket)
-        //     DEBUG_PRINT("%i,\n", bucket);
+        const UT_Vector3 source_min = sourcebbox.minvec();
+        const UT_Vector3 source_max = sourcebbox.maxvec();
+        
+        bucketsFoundInStore = bucket->findBucket(source_min, source_max, bucket);
         
     }
     
@@ -416,8 +407,8 @@ VRAY_AutomatteFilter::filter(
 
     // 
     if (pixelgrid.canBuild(sourcetodestwidth, sourcetodestheight, 1)) {
-        pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(),\
-         sourcetodestwidth, sourcetodestheight, 1);
+        // pixelgrid.build(bucket->getBBox()->minvec(), bucket->getBBox()->size(),sourcetodestwidth, sourcetodestheight, 1);
+         pixelgrid.build(sourcebbox.minvec(), sourcebbox.size(),sourcetodestwidth, sourcetodestheight, 1);
     }
 
     UT_Vector3PointQueue *queue;
@@ -628,7 +619,7 @@ VRAY_AutomatteFilter::filter(
     // SampleBucket new_bucket;
     // bqueue.insert(kt, new_bucket);
     // bucket.clear();
-    bucket->clearNeighbours();
+    // bucket->clearNeighbours();
     VEX_Samples_insertBucket(thread_id);
     #endif
 
