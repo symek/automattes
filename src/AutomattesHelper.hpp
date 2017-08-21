@@ -15,17 +15,18 @@ typedef std::vector<Sample> SampleBucketV;
 class SampleBucket
 {
 public:
-    const size_t size() const { return mySamples.size(); }
-    const size_t getNeighbourSize() const ;
+    const size_t size() const noexcept { return mySamples.size(); }
+    const size_t getNeighbourSize() const noexcept ;
     const Sample & at(const int & index) const;
-    const UT_BoundingBox * getBBox() const { return &myBbox; }
-    const SampleBucketV & getMySamples() const { return mySamples; }
+    const UT_BoundingBox * getBBox() const noexcept { return &myBbox; }
+    const SampleBucketV & getMySamples() const noexcept { return mySamples; }
     const int isRegistered() const noexcept { return myRegisteredFlag; } 
-    void clearNeighbours();
+    void clearNeighbours() noexcept;
+    void clear() noexcept { mySamples.clear(); }
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
-    int updateBoundingBox(const float &, const float &, const float &);
-    void registerBucket() const;
-    int  findBucket(const UT_Vector3 &, const UT_Vector3 &, SampleBucket *);
+    void updateBoundingBox(const float &, const float &, const float &);
+    size_t registerBucket();
+    int  fillBucket(const UT_Vector3 &, const UT_Vector3 &, SampleBucket *);
     void findBucket(const float &, const float &, 
         const float &, const float &, SampleBucket *) const;
 private:

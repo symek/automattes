@@ -130,7 +130,7 @@ const Sample & SampleBucket::at(const int & index) const
     }
 }
 
-const size_t SampleBucket::getNeighbourSize() const 
+const size_t SampleBucket::getNeighbourSize() const noexcept
 {
     std::lock_guard<std::mutex> guard(automattes_mutex);
     size_t size = 0;
@@ -142,13 +142,13 @@ const size_t SampleBucket::getNeighbourSize() const
     // return size;
 }
 
-void SampleBucket::clearNeighbours() 
+void SampleBucket::clearNeighbours() noexcept
 { 
     std::lock_guard<std::mutex> guard(automattes_mutex);
     myNeighbours.clear(); 
 }
 
-int SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
+void SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     const size_t size = mySamples.size();
@@ -166,17 +166,16 @@ int SampleBucket::updateBoundingBox(const float & expx, const float & expy, cons
     }
     myBbox.initBounds(bucket_min, bucket_max);
     myBbox.expandBounds(expx, expy, expz);
-    registerBucket();
-    myRegisteredFlag  = 1;
-    return bucketVector.size();
 }
 
-void SampleBucket::registerBucket() const 
+size_t SampleBucket::registerBucket() 
 {
     // update BucketGrid;
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     // temporarly heavily inefficient just to prove the point.
     bucketVector.push_back(*this);
+    myRegisteredFlag  = 1;
+    return bucketVector.size();
 
     // const coord_t xmin = myBbox.minvec().x();
     // const coord_t ymin = myBbox.minvec().y();
@@ -196,31 +195,33 @@ void SampleBucket::registerBucket() const
     // }
 }
 
-int SampleBucket::findBucket(const UT_Vector3 & min, const UT_Vector3 & max, SampleBucket * bucket) 
+int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, SampleBucket * bucket) 
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     int counter = 0;
+    const UT_Vector3 dir(max - min);
+    const UT_Vector3 max2(min.x(), max.y(), max.z());
+    const UT_Vector3 min2(max.x(), min.y(), min.z());
     const BucketVector::const_iterator it = bucketVector.begin();
     for(; it!=bucketVector.end(); ++it) {
         // const SampleBucket * store = static_cast<SampleBucket*>(*it);
         const SampleBucket & store = *it;
         const UT_BoundingBox * bbox = store.getBBox();
-        if (bbox->isInside(min) || bbox->isInside(max)) {
+        if (bbox->isInside(min) || bbox->isInside(max) \
+            || bbox->isInside(min2) || bbox->isInside(max2)) {
+        // if (bbox->isLineInside(min, dir)) {
             counter++;
             size_t size = store.size();
             for(size_t i=0; i < size; ++i) {
                 const Sample & vexsample = store.at(i);
                 mySamples.push_back(vexsample);
             }
-            // SampleBucketV::const_iterator
-            // myNeighbourSize += (*it)->getMySamples().size();
-            // break;
         }
     }
 
     return counter;
 
-    // const BucketGrid::const_iterator it = bucketGrid.begin();
+ // const BucketGrid::const_iterator it = bucketGrid.begin();
  //    for (; it!= bucketGrid.end(); ++it) {
  //        if (it->first <= ymax) {
  //            const BucketLine & line = it->second;
