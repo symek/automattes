@@ -46,7 +46,8 @@ typedef std::array<int, 2> BucketSize;
 
 //
 typedef float coord_t;
-typedef std::vector<SampleBucket*>    BucketVector;
+// typedef std::vector<SampleBucket*>    BucketVector;
+typedef tbb::concurrent_vector<SampleBucket>    BucketVector;
 // typedef std::map<coord_t, SampleBucket*> BucketGrid;
 
 

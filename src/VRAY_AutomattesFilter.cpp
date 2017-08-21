@@ -398,6 +398,7 @@ VRAY_AutomatteFilter::filter(
     
 
     const size_t bucket_size = bucket->size() + bucket->getNeighbourSize();
+    // DEBUG_PRINT("neighbours versus own samples: %i / %i,\n", bucket_size, bucket->size());
     positions.bumpSize(bucket_size);
     indices.bumpSize(bucket_size);
 
@@ -621,7 +622,7 @@ VRAY_AutomatteFilter::filter(
     // end of destx/desty loop;
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i), (bucketgrid: %i), (neighbours: %i)\n", \
-        thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucket->getNeighbourSize());
+        thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucketsFoundInStore);
     // BucketQueue  & bqueue = samples->at(thread_id);
     // BucketQueue::iterator kt = bqueue.begin();
     // SampleBucket new_bucket;

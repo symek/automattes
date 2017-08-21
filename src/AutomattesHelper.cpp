@@ -9,6 +9,7 @@
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
+#include <tbb/concurrent_vector.h>
 
 #include "AutomattesHelper.hpp"
 
@@ -148,7 +149,7 @@ void SampleBucket::clearNeighbours()
 
 int SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
 {
-    std::lock_guard<std::mutex> guard(automattes_mutex);
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
     UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
     UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
     const size_t size = mySamples.size();
@@ -170,7 +171,7 @@ void SampleBucket::registerBucket() const
     // update BucketGrid;
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     // temporarly heavily inefficient just to prove the point.
-    bucketVector.push_back(this);
+    bucketVector.push_back(*this);
 
     // const coord_t xmin = myBbox.minvec().x();
     // const coord_t ymin = myBbox.minvec().y();
@@ -192,17 +193,18 @@ void SampleBucket::registerBucket() const
 
 int SampleBucket::findBucket(const UT_Vector3 & min, const UT_Vector3 & max, SampleBucket * bucket) 
 {
-    std::lock_guard<std::mutex> guard(automattes_mutex);
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
     int counter = 0;
     const BucketVector::const_iterator it = bucketVector.begin();
     for(; it!=bucketVector.end(); ++it) {
-        const SampleBucket * store = static_cast<SampleBucket*>(*it);
-        const UT_BoundingBox * bbox = (*it)->getBBox();
+        // const SampleBucket * store = static_cast<SampleBucket*>(*it);
+        const SampleBucket & store = *it;
+        const UT_BoundingBox * bbox = store.getBBox();
         if (bbox->isInside(min) || bbox->isInside(max)) {
             counter++;
-            size_t size = store->size();
+            size_t size = store.size();
             for(size_t i=0; i < size; ++i) {
-                const Sample & vexsample = store->at(i);
+                const Sample & vexsample = store.at(i);
                 myNeighbours.push_back(vexsample);
             }
             // SampleBucketV::const_iterator
