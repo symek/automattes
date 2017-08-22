@@ -10,10 +10,11 @@
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
 #include <tbb/concurrent_vector.h>
-#include <tbb/concurrent_hash_map.h>
-
 #include "AutomattesHelper.hpp"
 
+#ifdef CONCURRENT_HASH_MAP
+#include <tbb/concurrent_hash_map.h>
+#endif
 
 namespace HA_HDK {
 
@@ -47,18 +48,28 @@ int VEX_Samples_create(const int& thread_id)
         mainThreadId = currentMainThreadId;
     }
 
-    VEX_Samples::const_iterator it;
-    it = vexsamples.find(thread_id);
-
+    #ifdef CONCURRENT_HASH_MAP
+    VEX_Samples::const_accessor ra;
+    if (vexsamples.find(ra, thread_id))
+        return thread_id;
+    #else
+    VEX_Samples::const_iterator it = vexsamples.find(thread_id);
     if(it != vexsamples.end())
         return thread_id;
+    #endif
 
     BucketQueue queue;
     queue.reserve(BucketQueueCapacity);//?
     bucketVector.reserve(BucketQueueCapacity*256);
     SampleBucket bucket;    
     vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
+    #ifdef CONCURRENT_HASH_MAP
+    VEX_Samples::accessor wa;
+    vexsamples.find(wa, thread_id);
+    wa->second.push_back(bucket);
+    #else
     vexsamples[thread_id].push_back(bucket);
+    #endif
     //debug
     vexBucketCounter.insert(std::pair<int, int>(thread_id, 0));
     vrayBucketCounter.insert(std::pair<int, int>(thread_id, 0));
@@ -68,9 +79,17 @@ int VEX_Samples_create(const int& thread_id)
 
 int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 {
+    #ifdef CONCURRENT_HASH_MAP
+    VEX_Samples::const_accessor ra;
+    const bool result = vexsamples.find(ra, thread_id);
+    UT_ASSERT(result);
+    BucketQueue::const_iterator jt = ra->second.begin();
+    #else
     VEX_Samples::const_iterator it = vexsamples.find(thread_id);
     UT_ASSERT(it != vexsamples.end());
     BucketQueue::iterator jt = vexsamples[thread_id].begin();
+    #endif
+
     jt->push_back(sample);
     const size_t size = jt->size();
     if (size == 1) {
@@ -83,8 +102,15 @@ int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 
 void VEX_Samples_insertBucket(const int & thread_id)
 {
+    #ifdef CONCURRENT_HASH_MAP
+    VEX_Samples::accessor wa;
+    const bool result = vexsamples.find(wa, thread_id);
+    UT_ASSERT(result);
+    BucketQueue & bqueue = wa->second;
+    #else
     std::lock_guard<std::mutex> guard(automattes_mutex);
-    BucketQueue  & bqueue = vexsamples.at(thread_id);
+    BucketQueue & bqueue = vexsamples.at(thread_id);
+    #endif
     BucketQueue::iterator kt = bqueue.begin();
     SampleBucket new_bucket;
     bqueue.insert(kt, new_bucket);
@@ -274,19 +300,25 @@ void SampleBucket::findBucket(const float & xmin, const float & ymin,
 
 int VEX_getBucket(const int thread_id, SampleBucket * bucket, int & offset)
 {
-    std::lock_guard<std::mutex> guard(automattes_mutex);
+    // #ifdef CONCURRENT_HASH_MAP
+    // VEX_Samples::accessor wa;
+    // const bool result = vexsamples.find(wa, thread_id);
+    // UT_ASSERT(result);
+
+    // #else
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
     // UT_ASSERT(vexsamples.find(thread_id) != vexsamples.end());
+    // const BucketQueue  & queue  = vexsamples.at(thread_id);
+    // #endif
+    // BucketQueue::const_iterator jt = queue.begin();
+    // for (; jt != queue.end(); ++jt, ++offset) {
+    //     if (jt->size() != 0) {
+    //         bucket = &(*jt);
+    //         break; 
+    //     }
+    // }
 
-    const BucketQueue  & queue  = vexsamples.at(thread_id);
-    BucketQueue::const_iterator jt = queue.begin();
-    for (; jt != queue.end(); ++jt, ++offset) {
-        if (jt->size() != 0) {
-            bucket = &(*jt);
-            break; 
-        }
-    }
-
-    return offset;
+    // return offset;
 }
 
 #if 0

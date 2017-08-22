@@ -8,10 +8,10 @@
 #include <functional>
 #include <memory>
 #include <map>
- 
+#include <tbb/concurrent_vector.h> 
 
 #include <UT/UT_DSOVersion.h>
-// #include <UT/UT_Thread.h>
+#include <UT/UT_Thread.h>
 #include <VEX/VEX_VexOp.h>
 #include <UT/UT_PointGrid.h>
 #include <UT/UT_BoundingBox.h>
@@ -20,6 +20,10 @@
 
 #include "MurmurHash3.h"
 #include "AutomattesHelper.hpp"
+ 
+#ifdef CONCURRENT_HASH_MAP
+#include <tbb/concurrent_hash_map.h>
+#endif
 
 namespace HA_HDK {
 

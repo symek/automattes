@@ -352,9 +352,20 @@ VRAY_AutomatteFilter::filter(
     const int thread_id = SYSgetSTID();
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
 
+    #ifdef CONCURRENT_HASH_MAP
+    UT_ASSERT(samples->find(thread_id));
+    #else
     UT_ASSERT(samples->find(thread_id) != samples->end());
+    #endif
+
     {
+        #ifdef CONCURRENT_HASH_MAP
+        VEX_Samples::const_accessor ra;
+        const bool result = samples->find(ra, thread_id);
+        const BucketQueue & queue = ra->second;
+        #else
         const BucketQueue  & queue  = samples->at(thread_id);
+        #endif
         BucketQueue::const_iterator jt = queue.begin();
         bucket = &(*jt);
         for (; jt != queue.end(); ++jt, ++offset) {

@@ -3,6 +3,8 @@
 #ifndef __AutomattesHelper__
 #define __AutomattesHelper__
 
+#define CONCURRENT_HASH_MAP
+
 namespace HA_HDK {
 
 // our fixed sample: x,y,z,id,Af 
@@ -38,8 +40,11 @@ private:
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
+#ifdef CONCURRENT_HASH_MAP
+typedef tbb::concurrent_hash_map<int, BucketQueue> VEX_Samples;
+#else
 typedef std::map<int, BucketQueue> VEX_Samples;
-// typedef tbb::concurrent_hash_map<int, BucketQueue> VEX_Samples;
+#endif
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
 
 // storage per channel.
