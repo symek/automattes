@@ -261,8 +261,8 @@ void VRAY_AutomatteFilter::updateSourceBoundingBox(
     const float * colordata, 
     UT_BoundingBox * sourceBbox) const
 {
-    UT_Vector3 source_min = {FLT_MAX, FLT_MAX, FLT_MAX};
-    UT_Vector3 source_max = {FLT_MIN, FLT_MIN, FLT_MIN};
+    UT_Vector3 source_min = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+    UT_Vector3 source_max = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
     for (int desty = 0; desty < destheight; ++desty) 
     {
         for (int destx = 0; destx < destwidth; ++destx) 
@@ -303,7 +303,7 @@ void VRAY_AutomatteFilter::updateSourceBoundingBox(
     }
 
     sourceBbox->initBounds(source_min, source_max);
-    sourceBbox->expandBounds(0.f, 0.f, 0.001f);
+    sourceBbox->expandBounds(-0.00f, -0.00f, 0.001f);
 }
 
 void
@@ -370,7 +370,7 @@ VRAY_AutomatteFilter::filter(
         destxoffsetinsource, destyoffsetinsource, vectorsize, colordata, &sourcebbox);
 
     if (bucket->size() != 0 && bucket->isRegistered() == 0) {
-        bucket->updateBoundingBox(0.0f, 0.0f, 0.01f);
+        bucket->updateBoundingBox(0.f, 0.f, 0.01f);
         bucketgridsize = bucket->registerBucket();
     } else {
         const UT_Vector3 source_min = sourcebbox.minvec();
@@ -408,6 +408,7 @@ VRAY_AutomatteFilter::filter(
     #endif
     
 
+    int horrorus = 0;
     // Run over destination pixels
     for (int desty = 0; desty < destheight; ++desty) 
     {
@@ -460,21 +461,30 @@ VRAY_AutomatteFilter::filter(
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
                         const UT_Vector3 position = {sx, sy, 0.f};
-                        const float radius = 0.0000001f;//?
+                        float radius = FLT_MIN;//0.001f;//?
 
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
                         // idx = sourcefirstx; idx = sourcefirsty; idz = 0;
                         // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
                         iter = pixelgrid.findCloseKeys(position, *queue, radius);
+
+                        // horrorus hackerous...
+                        while(iter.entries() == 0) {
+                            horrorus++;
+                            radius *= 2;
+                            iter = pixelgrid.findCloseKeys(position, *queue, radius);
+                        }
+
                         const int entries = SYSmax((float)iter.entries(), 1.f);
+
                         foundDeepSamples += (iter.entries() - 1);
                         const float repEntries = 1.f/(float)entries; 
                         gaussianNorm += (gaussianWeight*entries);
 
                         // TMP pseudo color to check offset:
                         if (iter.entries() == 0) {
-                            sample[0] += /*float(offset)*/1.f * gaussianWeight;
+                            //sample[0] += /*float(offset)*/1.f * gaussianWeight;
                         } else {
                             for (;!iter.atEnd(); iter.advance()) {
                                 const size_t idx = iter.getValue();
@@ -540,7 +550,6 @@ VRAY_AutomatteFilter::filter(
             }
 
             HashMap::const_reverse_iterator rit(coverage_map.rbegin());
-
             if (myRank == 0) {
                 // sample[2] = rit->second;
                 for (int i = 0; i< vectorsize; ++i, ++destination) {
@@ -573,7 +582,7 @@ VRAY_AutomatteFilter::filter(
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i), (bucketgrid: %i), (neighbours: %i)\n", \
         thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucketsFoundInStore);
-   
+    bucket->clear();
     VEX_Samples_insertBucket(thread_id);
 
     #endif
