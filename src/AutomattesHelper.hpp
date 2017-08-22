@@ -22,7 +22,7 @@ public:
     const SampleBucketV & getMySamples() const noexcept { return mySamples; }
     const int isRegistered() const noexcept { return myRegisteredFlag; } 
     void clearNeighbours() noexcept;
-    void clear() noexcept { mySamples.clear(); }
+    void clear() noexcept;
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
     void updateBoundingBox(const float &, const float &, const float &);
     size_t registerBucket();

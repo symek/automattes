@@ -148,6 +148,12 @@ void SampleBucket::clearNeighbours() noexcept
     myNeighbours.clear(); 
 }
 
+void SampleBucket::clear() noexcept
+{ 
+    SampleBucketV tmp;
+    mySamples.swap(tmp); 
+}
+
 void SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
@@ -156,8 +162,8 @@ void SampleBucket::updateBoundingBox(const float & expx, const float & expy, con
     if (size == 0)
         return -1;
 
-    UT_Vector3 bucket_min = {FLT_MAX, FLT_MAX, FLT_MAX};
-    UT_Vector3 bucket_max = {FLT_MIN, FLT_MIN, FLT_MIN};
+    UT_Vector3 bucket_min = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+    UT_Vector3 bucket_max = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
     for(int i=0; i < size; ++i) {
         const Sample sample = mySamples.at(i);
         const UT_Vector3 position = {sample[0], sample[1], 0.f};
@@ -207,9 +213,9 @@ int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, Sam
         // const SampleBucket * store = static_cast<SampleBucket*>(*it);
         const SampleBucket & store = *it;
         const UT_BoundingBox * bbox = store.getBBox();
-        if (bbox->isInside(min) || bbox->isInside(max) \
-            || bbox->isInside(min2) || bbox->isInside(max2)) {
-        // if (bbox->isLineInside(min, dir)) {
+        // if (bbox->isInside(min) || bbox->isInside(max) \
+            // || bbox->isInside(min2) || bbox->isInside(max2)) {
+        if (bbox->isLineInside(min, dir)) {
             counter++;
             size_t size = store.size();
             for(size_t i=0; i < size; ++i) {
