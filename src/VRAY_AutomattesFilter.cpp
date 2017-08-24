@@ -21,6 +21,7 @@
 #include <map>
 #include <memory>
 #include <limits>
+ #include <cmath>
 
 //OWN
 #include "VRAY_AutomattesFilter.hpp"
@@ -504,11 +505,19 @@ VRAY_AutomatteFilter::filter(
                                 const float _id =  vexsample[3];
                                 // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
                                 const float coverage = vexsample[4] * gaussianWeight; 
-                                uint seed  = static_cast<uint>(_id);
-                                sample[1] += gaussianWeight * SYSfastRandom(seed);
-                                     seed += 2345;
-                                sample[2] += gaussianWeight * SYSfastRandom(seed); 
 
+                                // borrowed: https://github.com/MercenariesEngineering/openexrid/blob/master/nuke/DeepOpenEXRId.cpp
+                                #ifdef HALTON_FALSE_COLORS
+                                    const float primes[3] = {2,3,5};
+                                    sample[0] += gaussianWeight * halton(primes[0], _id);
+                                    sample[1] += gaussianWeight * halton(primes[1], _id);
+                                    sample[2] += gaussianWeight * halton(primes[2], _id); 
+                                #else
+                                uint seed  = static_cast<uint>(_id);
+                                    sample[1] += gaussianWeight * SYSfastRandom(seed);
+                                         seed += 2345;
+                                    sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                                #endif
 
                                 if (hash_map.find(_id) == hash_map.end()) {
                                     hash_map.insert(std::pair<float, float>(_id, coverage));
@@ -533,10 +542,19 @@ VRAY_AutomatteFilter::filter(
                         const float _id = (myIdType == OBJECT) ? object_id : material_id; 
 
                         // 
-                        uint seed  = static_cast<uint>(_id);
-                        sample[1] += gaussianWeight * SYSfastRandom(seed);
-                             seed += 2345;
-                        sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                         #ifdef HALTON_FALSE_COLORS
+                        // borrowed: https://github.com/MercenariesEngineering/openexrid/blob/\
+                        // master/nuke/DeepOpenEXRId.cpp
+                        const float primes[3] = {2,3,5};
+                            sample[0] += gaussianWeight * halton(primes[0], _id);
+                            sample[1] += gaussianWeight * halton(primes[1], _id);
+                            sample[2] += gaussianWeight * halton(primes[2], _id); 
+                        #else
+                            uint seed  = static_cast<uint>(_id);
+                            sample[1] += gaussianWeight * SYSfastRandom(seed);
+                                 seed += 2345;
+                            sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                        #endif
                         
                         // 
                         if (hash_map.find(_id) == hash_map.end()) {

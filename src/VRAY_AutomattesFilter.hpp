@@ -16,6 +16,7 @@
 
 #define DEBUG
 #define VEXSAMPLES
+#define HALTON_FALSE_COLORS
 
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
@@ -69,6 +70,23 @@ float hash_to_float(uint32_t hash)
     float f;
     std::memcpy(&f, &float_bits, 4);
     return f;
+}
+
+// Borrowed from nice people of Mercenaries Engineering
+// https://github.com/MercenariesEngineering/openexrid/\
+// blob/master/nuke/DeepOpenEXRId.cpp
+inline float halton(const float base, const int id)
+{
+    float result = 0.f;
+    float f = 1.f;
+    float i = static_cast<float>(id);
+    while (i > 0.0f)
+    {
+        f = f / base;
+        result = result + f * std::fmod(i, base);
+        i = std::floor(i / base);
+    }
+    return result;
 }
 
 class VRAY_AutomatteFilter : public VRAY_PixelFilter {
