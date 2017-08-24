@@ -1,0 +1,19 @@
+#pragma hint objectid hidden
+fog automatte_shader(export vector4 objectid = 0)
+{
+    // Get object and/or material ids.
+    // this crashes Mantra atm
+    // int mat_id = getmaterialid();  
+    string       mat_name;
+    int result = renderstate("object:surface", mat_name);
+    int mat_id = random_shash(mat_name);
+    int obj_id = getobjectid();
+
+    // Store vex sample into RAM
+    vector nP  = toNDC(P);
+    int handle = vexstoreopen("automatte");
+        result = vexstoresave(handle,  set(nP.x, nP.y, Pz), obj_id, luminance(Of));
+
+    // export ndc coordintes to pixel filter.
+    objectid   = set(nP.x, (float)obj_id, (float)mat_id*min(1, result), nP.y);
+}
