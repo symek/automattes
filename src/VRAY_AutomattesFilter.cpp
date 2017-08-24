@@ -472,19 +472,19 @@ VRAY_AutomatteFilter::filter(
 
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
-                        const UT_Vector3 position = {sx, sy, 0.f};
-                        float radius = FLT_MIN;//0.001f;//?
+                              UT_Vector3 position = {sx, sy, 0.f};
+                        float radius = FLT_MIN * 10;//0.001f;//?
 
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
-                        // idx = sourcefirstx; idx = sourcefirsty; idz = 0;
+                        // idx = (int)sx; idy = (int)sy; idz = 1;
                         // iter = pixelgrid.getKeysAt(idx, idy, idz, *queue);
                         iter = pixelgrid.findCloseKeys(position, *queue, radius);
 
                         // horrorus hackerous...
                         while(iter.entries() == 0) {
                             horrorus++;
-                            radius *= 2;
+                            radius *= 1.1;
                             iter = pixelgrid.findCloseKeys(position, *queue, radius);
                         }
 
