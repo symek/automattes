@@ -4,6 +4,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <queue>
 
 
 #include <UT/UT_DSOVersion.h>
@@ -12,7 +13,7 @@
 #include <tbb/concurrent_vector.h>
 #include "AutomattesHelper.hpp"
 
-#ifdef CONCURRENT_HASH_MAP
+#if defined(NO_MUTEX_IN_BUCKETVECTOR) || defined(TBB_VEX_STORE)
 #include <tbb/concurrent_hash_map.h>
 #endif
 
@@ -36,6 +37,8 @@ static ut_thread_id_t mainThreadId = 0;
 static const size_t BucketQueueCapacity = 1024;
 static BucketVector bucketVector;
 
+static AutomatteVexCache atm_vex_cache;
+
 
 int VEX_Samples_create(const int& thread_id)
 {
@@ -48,7 +51,7 @@ int VEX_Samples_create(const int& thread_id)
         mainThreadId = currentMainThreadId;
     }
 
-    #ifdef CONCURRENT_HASH_MAP
+    #ifdef NO_MUTEX_IN_BUCKETVECTOR
     VEX_Samples::const_accessor ra;
     if (vexsamples.find(ra, thread_id))
         return thread_id;
@@ -63,7 +66,7 @@ int VEX_Samples_create(const int& thread_id)
     bucketVector.reserve(BucketQueueCapacity*256);
     SampleBucket bucket;    
     vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
-    #ifdef CONCURRENT_HASH_MAP
+    #ifdef NO_MUTEX_IN_BUCKETVECTOR
     VEX_Samples::accessor wa;
     vexsamples.find(wa, thread_id);
     wa->second.push_back(bucket);
@@ -79,7 +82,7 @@ int VEX_Samples_create(const int& thread_id)
 
 int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 {
-    #ifdef CONCURRENT_HASH_MAP
+    #ifdef NO_MUTEX_IN_BUCKETVECTOR
     VEX_Samples::const_accessor ra;
     const bool result = vexsamples.find(ra, thread_id);
     UT_ASSERT(result);
@@ -102,7 +105,7 @@ int VEX_Samples_insert(const int& thread_id, const Sample& sample)
 
 void VEX_Samples_insertBucket(const int & thread_id)
 {
-    #ifdef CONCURRENT_HASH_MAP
+    #ifdef NO_MUTEX_IN_BUCKETVECTOR
     VEX_Samples::accessor wa;
     const bool result = vexsamples.find(wa, thread_id);
     UT_ASSERT(result);
@@ -252,7 +255,74 @@ int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, Sam
     }
 
     return counter;
+}
 
+
+int create_vex_storage(const std::string & channel_name, const int & thread_id, \
+    const std::vector<float> & res, const std::vector<float> & samples)
+{
+    AutomatteVexCache::accessor channel_writer;
+    VEX_SamplesQ::accessor       bucket_queue_writer;
+    std::hash<std::string>      hasher;
+
+    // It's a bug, right? We need int32_t for VEX, size_t won't fit
+    // we could take murmur hasher...
+    const size_t  channel_hash_64 = hasher(channel_name);
+    const int32_t channel_hash_32 = static_cast<int32_t>(channel_hash_64);
+    std::cout << channel_hash_32 << " ";
+
+    if (!atm_vex_cache.find(channel_writer, channel_hash_32)) 
+    {
+        VEX_SamplesQ vex_samples;
+        BucketQueueQ queue;
+        SampleBucket bucket;    
+        // queue.reserve(BucketQueueCapacity);
+        queue.push(bucket);
+        vex_samples.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));
+        atm_vex_cache.insert(channel_writer, std::pair<int32_t, VEX_SamplesQ>(channel_hash_32, vex_samples));
+        return channel_hash_32;
+
+    } else {
+        VEX_SamplesQ & channel = channel_writer->second;
+        channel_writer.release();
+        if (!channel.find(bucket_queue_writer, thread_id)) {
+            BucketQueueQ queue;
+            SampleBucket bucket;    
+            // queue.reserve(BucketQueueCapacity);
+            queue.push(bucket);
+            channel.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));  
+        }
+        return channel_hash_32; 
+    }
+
+    return -1;
+}
+
+
+int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sample & sample)
+{
+    std::lock_guard<std::mutex> guard(automattes_mutex);
+    AutomatteVexCache::accessor channel_reader;
+    const bool channel_found = atm_vex_cache.find(channel_reader, handle);
+    UT_ASSERT(channel_found);
+    VEX_SamplesQ::accessor bucket_reader;
+    const bool thread_found = channel_reader->second.find(bucket_reader, thread_id);
+    UT_ASSERT(thread_found);
+    // BucketQueue::const_iterator it = bucket_reader->second.begin();
+    SampleBucket & it = bucket_reader->second.front();
+    it.push_back(sample);
+    const size_t size = it.size();
+    return size;
+}
+
+
+AutomatteVexCache * get_AutomatteVexCache()
+{ 
+    return &atm_vex_cache; 
+}
+
+
+#if 0
  // const BucketGrid::const_iterator it = bucketGrid.begin();
  //    for (; it!= bucketGrid.end(); ++it) {
  //        if (it->first <= ymax) {
@@ -300,7 +370,7 @@ void SampleBucket::findBucket(const float & xmin, const float & ymin,
 
 int VEX_getBucket(const int thread_id, SampleBucket * bucket, int & offset)
 {
-    // #ifdef CONCURRENT_HASH_MAP
+    // #ifdef NO_MUTEX_IN_BUCKETVECTOR
     // VEX_Samples::accessor wa;
     // const bool result = vexsamples.find(wa, thread_id);
     // UT_ASSERT(result);
@@ -321,7 +391,6 @@ int VEX_getBucket(const int thread_id, SampleBucket * bucket, int & offset)
     // return offset;
 }
 
-#if 0
 int 
 VEX_SampleClass::open_channel(const std::string & channel)
 {

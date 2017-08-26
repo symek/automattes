@@ -3,7 +3,15 @@
 #ifndef __AutomattesHelper__
 #define __AutomattesHelper__
 
-#define CONCURRENT_HASH_MAP
+#define NO_MUTEX_IN_BUCKETVECTOR
+#define TBB_VEX_STORE
+#define DEBUG
+
+#ifdef DEBUG
+#define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) do {} while (0)
+#endif
 
 namespace HA_HDK {
 
@@ -40,13 +48,17 @@ private:
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
-#ifdef CONCURRENT_HASH_MAP
+typedef std::queue<SampleBucket> BucketQueueQ;
+#ifdef NO_MUTEX_IN_BUCKETVECTOR
 typedef tbb::concurrent_hash_map<int, BucketQueue> VEX_Samples;
+typedef tbb::concurrent_hash_map<int, BucketQueueQ> VEX_SamplesQ;
 #else
 typedef std::map<int, BucketQueue> VEX_Samples;
 #endif
 typedef std::map<std::string, VEX_Samples> VEX_Channels;
-
+#if defined(TBB_VEX_STORE) && defined(NO_MUTEX_IN_BUCKETVECTOR)
+typedef tbb::concurrent_hash_map<int32_t, VEX_SamplesQ> AutomatteVexCache; 
+#endif
 // storage per channel.
 typedef std::map<int, int> BucketCounter;
 // main storage container.
@@ -73,6 +85,11 @@ BucketSize * VEX_getBucketSize();
 void VEX_setBucketSize(int x, int y);
 int VEX_bucketSizeSet();
 int VEX_getBucket(const int, SampleBucket *, int &);
+// new stuff
+int create_vex_storage(const std::string &, const int &, const std::vector<float> &,\
+        const std::vector<float> &);
+int insert_vex_sample(const int32_t &, const int &, const Sample&);
+AutomatteVexCache * get_AutomatteVexCache();
 
 } // end of HA_HDK Space
 

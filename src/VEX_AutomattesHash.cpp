@@ -21,7 +21,7 @@
 #include "MurmurHash3.h"
 #include "AutomattesHelper.hpp"
  
-#ifdef CONCURRENT_HASH_MAP
+#if defined(NO_MUTEX_IN_BUCKETVECTOR) || defined(TBB_VEX_STORE)
 #include <tbb/concurrent_hash_map.h>
 #endif
 
@@ -84,12 +84,46 @@ static void vex_store_save(int argc, void *argv[], void *data)
     const VEXfloat *id     = (const VEXfloat*) argv[3];
     const VEXfloat *Af     = (const VEXfloat*) argv[4];
 
+
     // const int thread_id = UT_Thread::getMyThreadId();
     const int thread_id = SYSgetSTID();
     const float thf = static_cast<float>(thread_id);
     Sample sample = {P->x(), P->y(), P->z(), *id, *Af, thf};
     *result = VEX_Samples_insert(*handle, sample);
 }
+
+static void automatte_open(int argc, void *argv[], void *data)
+{
+    int            *result  = (int*)            argv[0];
+    const char     *channel = (const char*)     argv[1];
+    const VEXvec3  *res     = (const VEXvec3*)  argv[2];
+    const VEXvec3  *samples = (const VEXvec3*)  argv[3];
+
+    const int thread_id = SYSgetSTID();
+
+    const std::vector<float> image_resolution {res->x(), res->y()};
+    const std::vector<float> pixel_samples    {samples->x(), samples->y()};
+    const std::string        channel_name(channel);
+   
+    result[0] = create_vex_storage(channel_name, thread_id, image_resolution, pixel_samples);
+
+}
+
+static void automatte_write(int argc, void *argv[], void *data)
+{
+          VEXint   *result = (      VEXint* )  argv[0];
+    const VEXint   *handle = (const VEXint* )  argv[1];
+    const VEXvec3  *P      = (const VEXvec3*)  argv[2];
+    const VEXfloat *id     = (const VEXfloat*) argv[3];
+    const VEXfloat *Af     = (const VEXfloat*) argv[4];
+
+    const int thread_id = SYSgetSTID();
+    const float thf = static_cast<float>(thread_id);
+    Sample sample = {P->x(), P->y(), P->z(), *id, *Af, thf};
+    int size = insert_vex_sample(*handle, thread_id, sample);
+    *result  = static_cast<uint32_t>(size);
+}
+
 
 }// end of HA_HDK namespace
 
@@ -131,6 +165,20 @@ newVEXOp(void *)
         NULL,           // init function
         NULL,           // cleanup function
         VEX_OPTIMIZE_2, // Optimization level
-        true);           
+        true);  
+    new VEX_VexOp("automatte_open@&ISVV",  // Signature
+        automatte_open,      // Evaluator
+        VEX_ALL_CONTEXT,    // Context mask
+        NULL,           // init function
+        NULL,           // cleanup function
+        VEX_OPTIMIZE_0 // Optimization level
+        ); 
+    new VEX_VexOp("automatte_write@&IIVFF",  // Signature
+        automatte_write,      // Evaluator
+        VEX_ALL_CONTEXT,    // Context mask
+        NULL,           // init function
+        NULL,           // cleanup function
+        VEX_OPTIMIZE_2, // Optimization level
+        true);         
     
 }
