@@ -5,18 +5,17 @@
 #include <functional>
 #include <memory>
 #include <queue>
-// #include <tuple>
+#include <atomic>
 
+#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_hash_map.h>
 
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
-#include <tbb/concurrent_vector.h>
 #include "AutomattesHelper.hpp"
 
-#if defined(NO_MUTEX_IN_BUCKETVECTOR) || defined(TBB_VEX_STORE)
-#include <tbb/concurrent_hash_map.h>
-#endif
+
 
 namespace HA_HDK {
 
@@ -32,33 +31,21 @@ static const size_t max_opacity_samples = 1;
 /// AutomatteVexCache stores buckets per thread per channel
 static AutomatteVexCache atm_vex_cache;
 // This is output grid composed from buckets in pixel filter.
-static AutomatteImage    atm_image;
+static AutomatteImage atm_image;
+static ImageInfo      atm_image_info;
 
 
 const Sample & SampleBucket::at(const int & index) const 
 {
-    const int size = mySamples.size();
-    UT_ASSERT (index < size) ;
-    return mySamples.at(index);
+    UT_ASSERT (index < m_samples.size()) ;
+    return m_samples.at(index);
 }
 
-const size_t SampleBucket::getNeighbourSize() const noexcept
-{
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    size_t size = 0;
-    return myNeighbours.size();
-}
-
-void SampleBucket::clearNeighbours() noexcept
-{ 
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    myNeighbours.clear(); 
-}
 
 void SampleBucket::clear() noexcept
 { 
-    SampleBucketV tmp;
-    mySamples.swap(tmp); 
+    std::vector<Sample> tmp;
+    m_samples.swap(tmp); 
 }
 
 
@@ -81,18 +68,20 @@ void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int>
 
 size_t SampleBucket::registerBucket() 
 {
-    const size_t size = mySamples.size();
+    const size_t size = m_samples.size();
     for(int i=0; i < size; ++i) {
-        const Sample vexsample = mySamples.at(i);
-        const float pxf = vexsample[0] * m_resolution[0] * m_pixelsamples[0];
-        const float pyf = vexsample[1] * m_resolution[1] * m_pixelsamples[1];
-        const size_t  subpxi = std::floor(pxf);
-        const size_t  subpyi = std::floor(pyf);
-        const size_t index = subpyi * m_resolution[0] * m_pixelsamples[0] + subpxi;
+        const Sample vexsample = m_samples.at(i);
+        const float pxf = vexsample[0] * atm_image_info.gridresx;
+        const float pyf = vexsample[1] * atm_image_info.gridresy;
+        const int subpxi = std::floor(pxf) + atm_image_info.image_margin;
+        const int subpyi = std::floor(pyf) + atm_image_info.image_margin;
+        const int index  = subpyi *atm_image_info.gridresx + subpxi;
         if(index < atm_image.size()) {
             atm_image.at(index) = vexsample;
         } else {
             // place empty sample here?
+            DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
+                vexsample[0], vexsample[1]);
         }
     }
 
@@ -100,6 +89,15 @@ size_t SampleBucket::registerBucket()
     return atm_image.size();
 }
 
+inline void ImageInfo::set_image_size(const std::vector<int> & res, 
+                                      const std::vector<int> & samples) noexcept
+{
+    gridresx = res[0] * samples[0] + 2 * image_margin;
+    gridresy = res[1] * samples[1] + 2 * image_margin;
+    image_size = gridresx * gridresy * max_samples;
+    m_resolution = res;
+    m_samples    = samples;
+}
 
 int create_vex_storage(const std::string & channel_name, const int & thread_id, \
     const std::vector<int> & res, const std::vector<int> & samples)
@@ -108,19 +106,25 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     std::lock_guard<std::mutex> guard(automattes_mutex);
     const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
 
+    if (atm_image_info.image_size == 0) {
+        atm_image_info.set_image_size(res, samples);
+    }
+
     if (atm_image.capacity() == 0)
-        atm_image.resize(res[0]*res[1]*samples[0]*samples[1]*max_opacity_samples);
+    {
+        atm_image.resize(atm_image_info.image_size);
+    }
 
     if (currentMainThreadId != mainThreadId) {
         atm_vex_cache.clear();
         AutomatteImage tmp;
-        tmp.resize(res[0]*res[1]*samples[0]*samples[1]*max_opacity_samples);
+        tmp.resize(atm_image_info.image_size);
         atm_image.swap(tmp);
         mainThreadId = currentMainThreadId;
     }
 
     AutomatteVexCache::accessor channel_writer;
-    VEX_SamplesQ::accessor       bucket_queue_writer;
+    VEX_Samples::accessor       bucket_queue_writer;
     std::hash<std::string>      hasher;
 
     // It's a bug, right? We need int32_t for VEX, size_t won't fit
@@ -130,24 +134,24 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 
     if (!atm_vex_cache.find(channel_writer, channel_hash_32)) 
     {
-        VEX_SamplesQ vex_samples;
-        BucketQueueQ queue;
+        VEX_Samples vex_samples;
+        BucketQueue queue;
         SampleBucket bucket; 
         bucket.copyInfo(res, samples);
         queue.push(bucket);
-        vex_samples.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));
-        atm_vex_cache.insert(channel_writer, std::pair<int32_t, VEX_SamplesQ>(channel_hash_32, vex_samples));
+        vex_samples.insert(bucket_queue_writer, std::pair<int, BucketQueue>(thread_id, queue));
+        atm_vex_cache.insert(channel_writer, std::pair<int32_t, VEX_Samples>(channel_hash_32, vex_samples));
         return channel_hash_32;
 
     } else {
-        VEX_SamplesQ & channel = channel_writer->second;
+        VEX_Samples & channel = channel_writer->second;
         channel_writer.release();
         if (!channel.find(bucket_queue_writer, thread_id)) {
-            BucketQueueQ queue;
+            BucketQueue queue;
             SampleBucket bucket; 
             bucket.copyInfo(res, samples);   
             queue.push(bucket);
-            channel.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));  
+            channel.insert(bucket_queue_writer, std::pair<int, BucketQueue>(thread_id, queue));  
         }
         return channel_hash_32; 
     }
@@ -158,14 +162,14 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 
 int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sample & sample)
 {
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    AutomatteVexCache::accessor channel_reader;
-    VEX_SamplesQ::accessor      bucket_reader;
-    atm_vex_cache.find(channel_reader, handle);
-    channel_reader->second.find(bucket_reader, thread_id);
-    SampleBucket & it = bucket_reader->second.front();
-    it.push_back(sample);
-    return it.size();
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
+    AutomatteVexCache::const_accessor channel;
+    atm_vex_cache.find(channel, handle);
+    VEX_Samples::accessor queue;
+    channel->second.find(queue, thread_id);
+    SampleBucket & bucket = queue->second.front();
+    bucket.push_back(sample);
+    return bucket.size();
 }
 
 
