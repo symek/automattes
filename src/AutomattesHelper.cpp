@@ -22,145 +22,24 @@ namespace HA_HDK {
 
 // used only for creating per thread storage
 static std::mutex automattes_mutex;
-static std::mutex automattes_mutex2;
-// our main storage
-static VEX_Samples vexsamples;
-// 
-// static BucketGrid bucketGridX;
-// static BucketGrid bucketGridY;
-//
-static BucketCounter vexBucketCounter;
-static BucketCounter vrayBucketCounter;
-// static VEX_SampleClass vexsamplesC;
-static BucketSize bucketSize = {0,0};
-static bool bucketSizeSet = 0;
+
 // make it atomic;
 static ut_thread_id_t mainThreadId = 0;
+
 static const size_t BucketQueueCapacity = 1024;
 static const size_t max_opacity_samples = 1;
-static BucketVector bucketVector;
 
+/// AutomatteVexCache stores buckets per thread per channel
 static AutomatteVexCache atm_vex_cache;
+// This is output grid composed from buckets in pixel filter.
 static AutomatteImage    atm_image;
 
-
-int VEX_Samples_create(const int& thread_id)
-{
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
-
-    if (currentMainThreadId != mainThreadId) {
-        vexsamples.clear();
-        bucketVector.clear();
-        mainThreadId = currentMainThreadId;
-    }
-
-    #ifdef NO_MUTEX_IN_BUCKETVECTOR
-    VEX_Samples::const_accessor ra;
-    if (vexsamples.find(ra, thread_id))
-        return thread_id;
-    #else
-    VEX_Samples::const_iterator it = vexsamples.find(thread_id);
-    if(it != vexsamples.end())
-        return thread_id;
-    #endif
-
-    BucketQueue queue;
-    queue.reserve(BucketQueueCapacity);//?
-    bucketVector.reserve(BucketQueueCapacity*256);
-    SampleBucket bucket;    
-    vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
-    #ifdef NO_MUTEX_IN_BUCKETVECTOR
-    VEX_Samples::accessor wa;
-    vexsamples.find(wa, thread_id);
-    wa->second.push_back(bucket);
-    #else
-    vexsamples[thread_id].push_back(bucket);
-    #endif
-    //debug
-    vexBucketCounter.insert(std::pair<int, int>(thread_id, 0));
-    vrayBucketCounter.insert(std::pair<int, int>(thread_id, 0));
-
-    return thread_id;
-} 
-
-int VEX_Samples_insert(const int& thread_id, const Sample& sample)
-{
-    #ifdef NO_MUTEX_IN_BUCKETVECTOR
-    VEX_Samples::const_accessor ra;
-    const bool result = vexsamples.find(ra, thread_id);
-    UT_ASSERT(result);
-    BucketQueue::const_iterator jt = ra->second.begin();
-    #else
-    VEX_Samples::const_iterator it = vexsamples.find(thread_id);
-    UT_ASSERT(it != vexsamples.end());
-    BucketQueue::iterator jt = vexsamples[thread_id].begin();
-    #endif
-
-    jt->push_back(sample);
-    const size_t size = jt->size();
-    if (size == 1) {
-        vexBucketCounter[thread_id] += 1;
-        std::cout << "VEX    thread: " << thread_id << ", bucket count:" \
-            << vexBucketCounter[thread_id] << "\n";  
-    }
-    return static_cast<int>(size); //thread_id;
-}
-
-void VEX_Samples_insertBucket(const int & thread_id)
-{
-    #ifdef NO_MUTEX_IN_BUCKETVECTOR
-    VEX_Samples::accessor wa;
-    const bool result = vexsamples.find(wa, thread_id);
-    UT_ASSERT(result);
-    BucketQueue & bqueue = wa->second;
-    #else
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    BucketQueue & bqueue = vexsamples.at(thread_id);
-    #endif
-    BucketQueue::iterator kt = bqueue.begin();
-    SampleBucket new_bucket;
-    bqueue.insert(kt, new_bucket);
-}
-
-VEX_Samples * VEX_Samples_get() 
-{
-    return &vexsamples;
-}
-
-int VEX_Samples_increamentBucketCounter(const int& thread_id)
-{
-    vrayBucketCounter[thread_id] += 1;
-    return vrayBucketCounter[thread_id];
-}
-
-BucketSize * VEX_getBucketSize() {
-    return &bucketSize;
-}
-
-void VEX_setBucketSize(int x, int y) {
-    std::lock_guard<std::mutex> guard(automattes_mutex);
-    if (bucketSize[0] != 0 || bucketSize[1] != 0) 
-        return;
-    
-    bucketSize[0] = x;
-    bucketSize[1] = y;
-}
-
-int VEX_bucketSizeSet() { return bucketSizeSet; }
 
 const Sample & SampleBucket::at(const int & index) const 
 {
     const int size = mySamples.size();
-    // const int idx = SYSmin(index, size-1);
-    // return mySamples.at(idx);
-    if (index < size) {
-        return mySamples.at(index);
-    } else {
-        const int neighbour_size = myNeighbours.size();
-        const int idx = SYSclamp(index-size, 0, neighbour_size-1);
-        return myNeighbours.at(idx);
-    }
+    UT_ASSERT (index < size) ;
+    return mySamples.at(index);
 }
 
 const size_t SampleBucket::getNeighbourSize() const noexcept
@@ -168,11 +47,6 @@ const size_t SampleBucket::getNeighbourSize() const noexcept
     std::lock_guard<std::mutex> guard(automattes_mutex);
     size_t size = 0;
     return myNeighbours.size();
-    // std::vector<SampleBucket*>::const_iterator it = myNeighbours.begin();
-    // for (; it!= myNeighbours.end(); ++it) {
-    //     size += (*it)->size();
-    // }
-    // return size;
 }
 
 void SampleBucket::clearNeighbours() noexcept
@@ -187,34 +61,8 @@ void SampleBucket::clear() noexcept
     mySamples.swap(tmp); 
 }
 
-void SampleBucket::updateBoundingBox(const float & expx, const float & expy, const float & expz) 
-{
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
-    const size_t size = mySamples.size();
-    // this should never happen;
-    if (size == 0)
-        return -1;
 
-    UT_Vector3 bucket_min = { FLT_MAX,  FLT_MAX,  FLT_MAX};
-    UT_Vector3 bucket_max = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
-    for(int i=0; i < size; ++i) {
-        const Sample sample = mySamples.at(i);
-        const UT_Vector3 position = {sample[0], sample[1], 0.f};
-        bucket_min = SYSmin(bucket_min, position);
-        bucket_max = SYSmax(bucket_max, position);
-    }
-    myBbox.initBounds(bucket_min, bucket_max);
-    myBbox.expandBounds(expx, expy, expz);
-}
-
-size_t SampleBucket::registerBucket() 
-{
-    bucketVector.push_back(*this);
-    myRegisteredFlag  = 1;
-    return bucketVector.size();
-}
-
-void SampleBucket::copyInfo(const SampleBucket * bucket)
+void SampleBucket::copyInfo(const SampleBucket * bucket) noexcept
 {
     m_resolution[0] = bucket->m_resolution[0];
     m_resolution[1] = bucket->m_resolution[1];
@@ -222,7 +70,8 @@ void SampleBucket::copyInfo(const SampleBucket * bucket)
     m_pixelsamples[1] = bucket->m_pixelsamples[1];
 }
 
-void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int> & samples)
+
+void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int> & samples) noexcept
 {
     m_resolution[0] = res.at(0);
     m_resolution[1] = res.at(1);
@@ -230,11 +79,9 @@ void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int>
     m_pixelsamples[1] = samples.at(1);
 }
 
-size_t SampleBucket::copyToAutomatteImage() 
+size_t SampleBucket::registerBucket() 
 {
-    // AutomatteImage::accessor image_writer;
     const size_t size = mySamples.size();
-    // std::cout << m_resolution[0] <<  m_resolution[1] << m_pixelsamples[0] << m_pixelsamples[1] << std::endl;
     for(int i=0; i < size; ++i) {
         const Sample vexsample = mySamples.at(i);
         const float pxf = vexsample[0] * m_resolution[0] * m_pixelsamples[0];
@@ -242,40 +89,15 @@ size_t SampleBucket::copyToAutomatteImage()
         const size_t  subpxi = std::floor(pxf);
         const size_t  subpyi = std::floor(pyf);
         const size_t index = subpyi * m_resolution[0] * m_pixelsamples[0] + subpxi;
-        // DEBUG_PRINT("index: %d, image capacity: %d\n", index, atm_image.capacity());
-        if(index < atm_image.size())
+        if(index < atm_image.size()) {
             atm_image.at(index) = vexsample;
-    }
-
-    // myRegisteredFlag  = 1;
-    return atm_image.size();
-}
-
-int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, SampleBucket * bucket) 
-{
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
-    int counter = 0;
-    const UT_Vector3 dir(max - min);
-    const UT_Vector3 max2(min.x(), max.y(), max.z());
-    const UT_Vector3 min2(max.x(), min.y(), min.z());
-    const BucketVector::const_iterator it = bucketVector.begin();
-    for(; it!=bucketVector.end(); ++it) {
-        // const SampleBucket * store = static_cast<SampleBucket*>(*it);
-        const SampleBucket & store = *it;
-        const UT_BoundingBox * bbox = store.getBBox();
-        // if (bbox->isInside(min) || bbox->isInside(max) \
-            // || bbox->isInside(min2) || bbox->isInside(max2)) {
-        if (bbox->isLineInside(min, dir)) {
-            counter++;
-            size_t size = store.size();
-            for(size_t i=0; i < size; ++i) {
-                const Sample & vexsample = store.at(i);
-                mySamples.push_back(vexsample);
-            }
+        } else {
+            // place empty sample here?
         }
     }
 
-    return counter;
+    myRegisteredFlag = 1;
+    return atm_image.size();
 }
 
 
@@ -312,7 +134,6 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
         BucketQueueQ queue;
         SampleBucket bucket; 
         bucket.copyInfo(res, samples);
-        // queue.reserve(BucketQueueCapacity);
         queue.push(bucket);
         vex_samples.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));
         atm_vex_cache.insert(channel_writer, std::pair<int32_t, VEX_SamplesQ>(channel_hash_32, vex_samples));
@@ -325,7 +146,6 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
             BucketQueueQ queue;
             SampleBucket bucket; 
             bucket.copyInfo(res, samples);   
-            // queue.reserve(BucketQueueCapacity);
             queue.push(bucket);
             channel.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));  
         }
@@ -340,16 +160,12 @@ int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sampl
 {
     std::lock_guard<std::mutex> guard(automattes_mutex);
     AutomatteVexCache::accessor channel_reader;
-    const bool channel_found = atm_vex_cache.find(channel_reader, handle);
-    UT_ASSERT(channel_found);
-    VEX_SamplesQ::accessor bucket_reader;
-    const bool thread_found = channel_reader->second.find(bucket_reader, thread_id);
-    UT_ASSERT(thread_found);
-    // BucketQueue::const_iterator it = bucket_reader->second.begin();
+    VEX_SamplesQ::accessor      bucket_reader;
+    atm_vex_cache.find(channel_reader, handle);
+    channel_reader->second.find(bucket_reader, thread_id);
     SampleBucket & it = bucket_reader->second.front();
     it.push_back(sample);
-    const size_t size = it.size();
-    return size;
+    return it.size();
 }
 
 
@@ -362,144 +178,5 @@ AutomatteImage * get_AutomatteImage()
 {
     return &atm_image;
 }
-
-
-#if 0
- // const BucketGrid::const_iterator it = bucketGrid.begin();
- //    for (; it!= bucketGrid.end(); ++it) {
- //        if (it->first <= ymax) {
- //            const BucketLine & line = it->second;
- //            BucketLine::const_iterator jt = line.begin();
- //            for (; jt != line.end(); ++jt) {
- //                if(jt->first <= xmax) {
- //                    // std::cout << "selecting new bucket\n";
- //                    jt++;
- //                    if (jt == line.end())
- //                        jt--;
- //                    bucket = static_cast<SampleBucket*>(jt->second);
- //                    break;
- //                }
- //            } 
-            
- //        }
- //    }
-}
-
-
-void SampleBucket::findBucket(const float & xmin, const float & ymin, 
-    const float & xmax, const float & ymax, SampleBucket * bucket) const 
-{
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
-    // const BucketGrid::const_iterator it = bucketGrid.begin();
- //    for (; it!= bucketGrid.end(); ++it) {
- //        if (it->first <= ymax) {
- //            const BucketLine & line = it->second;
- //            BucketLine::const_iterator jt = line.begin();
- //            for (; jt != line.end(); ++jt) {
- //                if(jt->first <= xmax) {
- //                    // std::cout << "selecting new bucket\n";
- //                    jt++;
- //                    if (jt == line.end())
- //                        jt--;
- //                    bucket = static_cast<SampleBucket*>(jt->second);
- //                    break;
- //                }
- //            } 
-            
- //        }
- //    }
-}
-
-int VEX_getBucket(const int thread_id, SampleBucket * bucket, int & offset)
-{
-    // #ifdef NO_MUTEX_IN_BUCKETVECTOR
-    // VEX_Samples::accessor wa;
-    // const bool result = vexsamples.find(wa, thread_id);
-    // UT_ASSERT(result);
-
-    // #else
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
-    // UT_ASSERT(vexsamples.find(thread_id) != vexsamples.end());
-    // const BucketQueue  & queue  = vexsamples.at(thread_id);
-    // #endif
-    // BucketQueue::const_iterator jt = queue.begin();
-    // for (; jt != queue.end(); ++jt, ++offset) {
-    //     if (jt->size() != 0) {
-    //         bucket = &(*jt);
-    //         break; 
-    //     }
-    // }
-
-    // return offset;
-}
-
-int 
-VEX_SampleClass::open_channel(const std::string & channel)
-{
-    VEX_Channels::const_iterator it = myChannels.find(channel);
-    if (it == myChannels.end()) {
-        const int index = myChannels.size();
-        VEX_Samples samples;
-        myChannels.insert(std::pair<std::string, VEX_Samples>(channel, samples));
-        return index;
-    } else {
-        return -1; // TODO: should return an index of a channel;
-    }
-}
-
-int 
-VEX_SampleClass::insert_queue(const std::string & channel, const int & thread_id)
-{
-    // std::lock_guard<std::mutex> guard(automattes_mutex2);
-    VEX_Channels::const_iterator chit = myChannels.find(channel);
-    UT_ASSERT(chit != myChannels.end());
-
-    if (chit == myChannels.end()) {
-        const int result = open_channel(channel);
-        UT_ASSERT(result != -1);
-        if (result == -1)
-            return -1;
-    }
-
-    VEX_Samples & vexsamples  = myChannels.at(channel);
-    VEX_Samples::iterator sit = vexsamples.find(thread_id);
-
-    if (sit == vexsamples.end()) {
-        BucketQueue queue;
-        vexsamples.insert(std::pair<int, BucketQueue>(thread_id, queue));
-        return thread_id;
-    } else {
-        return 0;
-    }
-
-}
-
-
-
-int
-VEX_SampleClass::insert_bucket(const std::string & channel, const int & thread_id)
-{
-    VEX_Channels::const_iterator chit = myChannels.find(channel);
-    UT_ASSERT(chit != myChannels.end());
-    VEX_Samples vexsamples = chit->second;
-    VEX_Samples::const_iterator sit = vexsamples.find(thread_id);
-    UT_ASSERT(sit != vexsamples.end());
-    BucketQueue  & bqueue = vexsamples.at(thread_id);
-    BucketQueue::iterator kt = bqueue.begin();
-    SampleBucket new_bucket;
-    bqueue.insert(kt, new_bucket);
-    return bqueue.size();
-
- }
-
-// int
-// VEX_SampleClass::insert_sample(const int &thread_id, const std::string& channel, const Sample& sample)
-// {
-//  VEX_Channels::const_iterator chit = myChannels.find(channel);
-//  VEX_Samples samples = chit->second;
-//  VEX_Samples::const_iterator sit = samples.find(thread_id);
-
-// }
-#endif
 
 } // end of HA_HDK

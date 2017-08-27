@@ -124,12 +124,6 @@ public:
         int destyoffsetinsource,
         const VRAY_Imager &imager) const;
 
-    void updateSourceBoundingBox(const int &, const int &, 
-        const int &, const int &, 
-        const int &, const int &,
-        const int &, const float *,  
-        UT_BoundingBox * ) const;
-
 private:
    
     int mySamplesPerPixelX;

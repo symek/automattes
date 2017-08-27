@@ -48,15 +48,9 @@ public:
     void clearNeighbours() noexcept;
     void clear() noexcept;
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
-    void updateBoundingBox(const float &, const float &, const float &);
     size_t registerBucket();
-    size_t copyToAutomatteImage();
-    void copyInfo(const SampleBucket *);
-    void copyInfo(const std::vector<int> &, const std::vector<int> &);
-    int  fillBucket(const UT_Vector3 &, const UT_Vector3 &, SampleBucket *);
-    void findBucket(const float &, const float &, 
-        const float &, const float &, SampleBucket *) const;
-
+    void copyInfo(const SampleBucket *) noexcept;
+    void copyInfo(const std::vector<int> &, const std::vector<int> &) noexcept;
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;
@@ -64,7 +58,7 @@ private:
     SampleBucketV myNeighbours;
     size_t myNeighbourSize = 0;
 public:
-    uint m_resolution[2] = {0,0};
+    uint m_resolution[2]   = {0,0};
     uint m_pixelsamples[2] = {0,0};
 };
 
