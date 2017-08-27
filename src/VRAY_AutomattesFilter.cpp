@@ -176,48 +176,49 @@ VRAY_AutomatteFilter::filter(
     UT_ASSERT(vectorsize == 4);
 
     const float *const colordata = getSampleData(source, channel);
-    const float *const Object_ids  = (myHashType == MANTRA) ? \
-        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
-    const float *const Material_ids = (myHashType == MANTRA) ? \
-        getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
 
-     // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
-     // * - not supported yet.
-    const int hash_index = (myIdType == OBJECT) ? 1 : 2;
+    #ifndef VEXSAMPLES
+        const float *const Object_ids  = (myHashType == MANTRA) ? \
+            getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_OPID)) : NULL;
+        const float *const Material_ids = (myHashType == MANTRA) ? \
+            getSampleData(source, getSpecialChannelIdx(imager, VRAY_SPECIAL_MATERIALID)) : NULL;
+         // Resolution convention R: Asset*, G: Object, B: Material, A: group*.
+         // * - not supported yet.
+        const int hash_index = (myIdType == OBJECT) ? 1 : 2;
+    #endif
 
     #ifdef VEXSAMPLES
 
         AutomatteVexCache * vex_cache = get_AutomatteVexCache();
         AutomatteImage    * vex_image = get_AutomatteImage(); // ?
-        VEX_SamplesQ      * samples   = nullptr;
+        VEX_Samples       * samples   = nullptr;
 
         AutomatteVexCache::const_accessor  channel_reader;
         if(vex_cache->find(channel_reader, AUTOMATTE_CHANNEL_HASH)) {
-            samples = &(channel_reader->second);
+            const VEX_Samples & ref = channel_reader->second;
+            samples = const_cast<VEX_Samples*>(&ref);
         } else {
             // TODO: Do something about it;
             UT_ASSERT(false);
         }
         
         SampleBucket * bucket  = nullptr;
-        size_t atm_image_size  = 0;
         const int thread_id    = SYSgetSTID();
         
-        VEX_SamplesQ::const_accessor bucket_reader;
-        if (samples->find(bucket_reader, thread_id)) {
+        VEX_Samples::accessor bucket_queue;
+        if (samples->find(bucket_queue, thread_id)) {
             // TODO: move to reference, we don't need pointer anymore?.
-            bucket = &(bucket_reader->second.front()); 
+            SampleBucket & bucket_ref = bucket_queue->second.front();
+            bucket = static_cast<SampleBucket*>(&bucket_ref); 
         } else {
             // FIXMED ?
             UT_ASSERT(false);
         }
 
-
         if (bucket->size() != 0 && bucket->isRegistered() == 0) {
-            atm_image_size = bucket->registerBucket();
+            bucket->registerBucket();
         } 
         
-        DEBUG_PRINT("atm_image_size: %d\n", atm_image_size);
 
     #endif
     
@@ -388,12 +389,12 @@ VRAY_AutomatteFilter::filter(
 
 
     #ifdef VEXSAMPLES 
-        DEBUG_PRINT("Filter thread: %i,\n", thread_id);
+        // DEBUG_PRINT("Filter thread: %i,\n", thread_id);
         bucket->clear();
         SampleBucket newbucket;
         newbucket.copyInfo(bucket);
-        bucket_reader->second.pop();
-        bucket_reader->second.push(newbucket);
+        bucket_queue->second.pop();
+        bucket_queue->second.push(newbucket);
     #endif
 
 }

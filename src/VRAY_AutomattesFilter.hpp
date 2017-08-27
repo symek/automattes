@@ -75,8 +75,7 @@ float hash_to_float(uint32_t hash)
 }
 
 // Borrowed from nice people of Mercenaries Engineering
-// https://github.com/MercenariesEngineering/openexrid/\
-// blob/master/nuke/DeepOpenEXRId.cpp
+// https://github.com/MercenariesEngineering/openexrid/
 inline float halton(const float base, const int id)
 {
     float result = 0.f;
