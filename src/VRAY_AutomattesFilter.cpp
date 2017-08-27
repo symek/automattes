@@ -21,7 +21,8 @@
 #include <map>
 #include <memory>
 #include <limits>
- #include <cmath>
+#include <cmath>
+#include <queue>
 
 //OWN
 #include "VRAY_AutomattesFilter.hpp"
@@ -339,7 +340,19 @@ VRAY_AutomatteFilter::filter(
     // std::unique_ptr<UT_PointGrid<UT_Vector3Point>> pixelgrid(nullptr);
     UT_Vector3Array  positions;
     UT_ValArray<int> indices;
-    VEX_Samples  * samples = VEX_Samples_get();
+
+    AutomatteVexCache * vex_cache = get_AutomatteVexCache();
+    AutomatteImage    * vex_image = get_AutomatteImage();
+    AutomatteVexCache::const_accessor channel_reader;
+    VEX_SamplesQ * samples = nullptr;
+
+    if(vex_cache->find(channel_reader, AUTOMATTE_CHANNEL_HASH)) {
+        samples = &(channel_reader->second);
+    }
+    else {
+        UT_ASSERT(false);
+    }
+    
     SampleBucket * bucket  = nullptr;
 
     int offset = 0;
@@ -348,34 +361,23 @@ VRAY_AutomatteFilter::filter(
     int foundDeepSamples = 0;
     int bucketgridsize = 0;
     int bucketsFoundInStore = 0;
+    size_t atm_image_size   = 0;
 
 
-    const int thread_id = SYSgetSTID();
+    const int thread_id       = SYSgetSTID();
     const int myBucketCounter = VEX_Samples_increamentBucketCounter(thread_id);
-
-    #ifdef CONCURRENT_HASH_MAP
+    
     UT_ASSERT(samples->find(thread_id));
-    #else
-    UT_ASSERT(samples->find(thread_id) != samples->end());
-    #endif
+   
 
-    {
-        #ifdef CONCURRENT_HASH_MAP
-        VEX_Samples::const_accessor ra;
-        const bool result = samples->find(ra, thread_id);
-        const BucketQueue & queue = ra->second;
-        #else
-        const BucketQueue  & queue  = samples->at(thread_id);
-        #endif
-        BucketQueue::const_iterator jt = queue.begin();
-        bucket = &(*jt);
-        for (; jt != queue.end(); ++jt, ++offset) {
-            if (jt->size() != 0) {
-                // bucket = &(*jt);
-                break; 
-            }
-        }
-    }
+    VEX_SamplesQ::const_accessor bucket_reader;
+    const bool thread_found = samples->find(bucket_reader, thread_id);
+
+    if (!thread_found)
+        UT_ASSERT(false);
+
+    // const BucketQueueQ & queue = bucket_reader->second;
+    bucket = &(bucket_reader->second.front()); /// move to reference, we don't need pointer anymore?.
 
     UT_BoundingBox sourcebbox;
     updateSourceBoundingBox(destwidth, destheight, sourcewidth, sourceheight, 
@@ -383,6 +385,7 @@ VRAY_AutomatteFilter::filter(
 
     if (bucket->size() != 0 && bucket->isRegistered() == 0) {
         bucket->updateBoundingBox(0.f, 0.f, 0.01f);
+        atm_image_size = bucket->copyToAutomatteImage();
         bucketgridsize = bucket->registerBucket();
     } else {
         const UT_Vector3 source_min = sourcebbox.minvec();
@@ -390,7 +393,7 @@ VRAY_AutomatteFilter::filter(
         bucketsFoundInStore = bucket->fillBucket(source_min, source_max, bucket);
     }
     
-
+    DEBUG_PRINT("atm_image_size: %d\n", atm_image_size);
     const size_t bucket_size = bucket->size();
     positions.bumpSize(bucket_size);
     indices.bumpSize(bucket_size);
@@ -475,6 +478,34 @@ VRAY_AutomatteFilter::filter(
                               UT_Vector3 position = {sx, sy, 0.f};
                         float radius = FLT_MIN * 10;//0.001f;//?
 
+                        #ifdef USE_AUTOMATTE_IMAGE
+                        const float pxf = sx * bucket->m_resolution[0] * bucket->m_pixelsamples[0];
+                        const float pyf = sy * bucket->m_resolution[1] * bucket->m_pixelsamples[1];
+                        const size_t subpxi = std::floor(pxf);
+                        const size_t subpyi = std::floor(pyf);
+                        const size_t index  = subpyi * bucket->m_resolution[0] * bucket->m_pixelsamples[0] + subpxi;
+
+                        if (index < vex_image->size()) {
+                            const Sample & vexsample = vex_image->at(index);
+                            const float _id =  vexsample[3];
+                            // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
+                            const float coverage = vexsample[4] * gaussianWeight; 
+                            const float primes[3] = {2,3,5};
+                            sample[0] += gaussianWeight * halton(primes[0], _id);
+                            sample[1] += gaussianWeight * halton(primes[1], _id);
+                            sample[2] += gaussianWeight * halton(primes[2], _id);
+
+                            gaussianNorm += gaussianWeight;
+                            
+                            if (hash_map.find(_id) == hash_map.end()) {
+                                hash_map.insert(std::pair<float, float>(_id, coverage));
+                            } else {
+                                hash_map[_id] += coverage;
+                            }
+                        } 
+                    
+                        #else
+
                         // int idx, idy, idz;
                         // const bool found_voxel = pixelgrid.posToIndex(position, idx, idy, idz, true);
                         // idx = (int)sx; idy = (int)sy; idz = 1;
@@ -527,6 +558,7 @@ VRAY_AutomatteFilter::filter(
                                 }
                             }
                         }
+                        #endif // end of USE_AUTOMATTE_IMAGE
 
                         #else
 
@@ -611,8 +643,12 @@ VRAY_AutomatteFilter::filter(
     pixelgrid.destroyQueue(queue);
     DEBUG_PRINT("Filter thread: %i, bucket count:%i (size: %lu) (offset: %i), (dim: %i, %i), (deep: %i), (bucketgrid: %i), (neighbours: %i)\n", \
         thread_id, myBucketCounter, bucket_size, offset, destwidth, destheight, foundDeepSamples, bucketgridsize, bucketsFoundInStore);
+   
     bucket->clear();
-    VEX_Samples_insertBucket(thread_id);
+    SampleBucket newbucket;
+    newbucket.copyInfo(bucket);
+    bucket_reader->second.pop();
+    bucket_reader->second.push(newbucket);
 
     #endif
 

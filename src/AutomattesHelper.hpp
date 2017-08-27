@@ -16,7 +16,21 @@
 namespace HA_HDK {
 
 // our fixed sample: x,y,z,id,Af 
-typedef std::vector<float> Sample; 
+typedef std::vector<float> Sample;
+// temporal
+// struct Sample 
+// {
+//     Sample(const float x, const float y, const float z, \
+//         const float id, const float Af, const float thread) noexcept
+//     {
+//         storage[0] = x; storage[1] = y; storage[2] = z;
+//         storage[3] = id; storage[4] = Af; storage[5] = thread;
+//     }
+//     float operator[](size_t i) const { return storage[i]; }
+// private: 
+//     float storage[6]; 
+// };
+
 // vector of samples per thread (reused by many buckets)
 typedef std::vector<Sample> SampleBucketV;
 
@@ -36,15 +50,22 @@ public:
     void push_back(const Sample & sample) { mySamples.push_back(sample); }
     void updateBoundingBox(const float &, const float &, const float &);
     size_t registerBucket();
+    size_t copyToAutomatteImage();
+    void copyInfo(const SampleBucket *);
+    void copyInfo(const std::vector<int> &, const std::vector<int> &);
     int  fillBucket(const UT_Vector3 &, const UT_Vector3 &, SampleBucket *);
     void findBucket(const float &, const float &, 
         const float &, const float &, SampleBucket *) const;
+
 private:
     SampleBucketV mySamples;
     UT_BoundingBox myBbox;
     int myRegisteredFlag = 0;
     SampleBucketV myNeighbours;
     size_t myNeighbourSize = 0;
+public:
+    uint m_resolution[2] = {0,0};
+    uint m_pixelsamples[2] = {0,0};
 };
 
 typedef std::vector<SampleBucket>BucketQueue;
@@ -68,6 +89,7 @@ typedef std::array<int, 2> BucketSize;
 typedef float coord_t;
 // typedef std::vector<SampleBucket*>    BucketVector;
 typedef tbb::concurrent_vector<SampleBucket>    BucketVector;
+typedef tbb::concurrent_vector<Sample>          AutomatteImage;
 // typedef std::map<coord_t, SampleBucket*> BucketGrid;
 
 
@@ -86,10 +108,11 @@ void VEX_setBucketSize(int x, int y);
 int VEX_bucketSizeSet();
 int VEX_getBucket(const int, SampleBucket *, int &);
 // new stuff
-int create_vex_storage(const std::string &, const int &, const std::vector<float> &,\
-        const std::vector<float> &);
+int create_vex_storage(const std::string &, const int &, const std::vector<int> &,\
+        const std::vector<int> &);
 int insert_vex_sample(const int32_t &, const int &, const Sample&);
 AutomatteVexCache * get_AutomatteVexCache();
+AutomatteImage    * get_AutomatteImage();
 
 } // end of HA_HDK Space
 

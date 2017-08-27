@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include <queue>
 #include <tbb/concurrent_vector.h> 
 
 #include <UT/UT_DSOVersion.h>
@@ -101,8 +102,8 @@ static void automatte_open(int argc, void *argv[], void *data)
 
     const int thread_id = SYSgetSTID();
 
-    const std::vector<float> image_resolution {res->x(), res->y()};
-    const std::vector<float> pixel_samples    {samples->x(), samples->y()};
+    const std::vector<int> image_resolution {(int)res->x(), (int)res->y()};
+    const std::vector<int> pixel_samples    {(int)samples->x(), (int)samples->y()};
     const std::string        channel_name(channel);
    
     result[0] = create_vex_storage(channel_name, thread_id, image_resolution, pixel_samples);

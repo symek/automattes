@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <queue>
+// #include <tuple>
 
 
 #include <UT/UT_DSOVersion.h>
@@ -33,11 +34,14 @@ static BucketCounter vrayBucketCounter;
 // static VEX_SampleClass vexsamplesC;
 static BucketSize bucketSize = {0,0};
 static bool bucketSizeSet = 0;
+// make it atomic;
 static ut_thread_id_t mainThreadId = 0;
 static const size_t BucketQueueCapacity = 1024;
+static const size_t max_opacity_samples = 1;
 static BucketVector bucketVector;
 
 static AutomatteVexCache atm_vex_cache;
+static AutomatteImage    atm_image;
 
 
 int VEX_Samples_create(const int& thread_id)
@@ -205,29 +209,46 @@ void SampleBucket::updateBoundingBox(const float & expx, const float & expy, con
 
 size_t SampleBucket::registerBucket() 
 {
-    // update BucketGrid;
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
-    // temporarly heavily inefficient just to prove the point.
     bucketVector.push_back(*this);
     myRegisteredFlag  = 1;
     return bucketVector.size();
+}
 
-    // const coord_t xmin = myBbox.minvec().x();
-    // const coord_t ymin = myBbox.minvec().y();
-    // BucketGrid::const_iterator xit = bucketGridX.find(xmin);
-    // BucketGrid::const_iterator yit = bucketGridY.find(ymin);
+void SampleBucket::copyInfo(const SampleBucket * bucket)
+{
+    m_resolution[0] = bucket->m_resolution[0];
+    m_resolution[1] = bucket->m_resolution[1];
+    m_pixelsamples[0] = bucket->m_pixelsamples[0];
+    m_pixelsamples[1] = bucket->m_pixelsamples[1];
+}
 
-    // if (xit == bucketGridX.end()) {
-    //     // BucketLine line;
-    //     // line.push_back(std::pair<coord_t, SampleBucket*>(xmax, this));
-    //     bucketGridX.insert(std::pair<coord_t, SampleBucket*>(xmin, this));
-    // } else {
-    //     BucketLine line = it->second;
-    //     BucketLine::const_iterator jt = line.find(xmax);
-    //     if (jt == line.end()) {
-    //         line.insert(std::pair<coord_t, SampleBucket*>(xmax, this));
-    //     }
-    // }
+void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int> & samples)
+{
+    m_resolution[0] = res.at(0);
+    m_resolution[1] = res.at(1);
+    m_pixelsamples[0] = samples.at(0);
+    m_pixelsamples[1] = samples.at(1);
+}
+
+size_t SampleBucket::copyToAutomatteImage() 
+{
+    // AutomatteImage::accessor image_writer;
+    const size_t size = mySamples.size();
+    // std::cout << m_resolution[0] <<  m_resolution[1] << m_pixelsamples[0] << m_pixelsamples[1] << std::endl;
+    for(int i=0; i < size; ++i) {
+        const Sample vexsample = mySamples.at(i);
+        const float pxf = vexsample[0] * m_resolution[0] * m_pixelsamples[0];
+        const float pyf = vexsample[1] * m_resolution[1] * m_pixelsamples[1];
+        const size_t  subpxi = std::floor(pxf);
+        const size_t  subpyi = std::floor(pyf);
+        const size_t index = subpyi * m_resolution[0] * m_pixelsamples[0] + subpxi;
+        // DEBUG_PRINT("index: %d, image capacity: %d\n", index, atm_image.capacity());
+        if(index < atm_image.size())
+            atm_image.at(index) = vexsample;
+    }
+
+    // myRegisteredFlag  = 1;
+    return atm_image.size();
 }
 
 int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, SampleBucket * bucket) 
@@ -259,8 +280,23 @@ int SampleBucket::fillBucket(const UT_Vector3 & min, const UT_Vector3 & max, Sam
 
 
 int create_vex_storage(const std::string & channel_name, const int & thread_id, \
-    const std::vector<float> & res, const std::vector<float> & samples)
+    const std::vector<int> & res, const std::vector<int> & samples)
 {
+
+    std::lock_guard<std::mutex> guard(automattes_mutex);
+    const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
+
+    if (atm_image.capacity() == 0)
+        atm_image.resize(res[0]*res[1]*samples[0]*samples[1]*max_opacity_samples);
+
+    if (currentMainThreadId != mainThreadId) {
+        atm_vex_cache.clear();
+        AutomatteImage tmp;
+        tmp.resize(res[0]*res[1]*samples[0]*samples[1]*max_opacity_samples);
+        atm_image.swap(tmp);
+        mainThreadId = currentMainThreadId;
+    }
+
     AutomatteVexCache::accessor channel_writer;
     VEX_SamplesQ::accessor       bucket_queue_writer;
     std::hash<std::string>      hasher;
@@ -269,13 +305,13 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     // we could take murmur hasher...
     const size_t  channel_hash_64 = hasher(channel_name);
     const int32_t channel_hash_32 = static_cast<int32_t>(channel_hash_64);
-    std::cout << channel_hash_32 << " ";
 
     if (!atm_vex_cache.find(channel_writer, channel_hash_32)) 
     {
         VEX_SamplesQ vex_samples;
         BucketQueueQ queue;
-        SampleBucket bucket;    
+        SampleBucket bucket; 
+        bucket.copyInfo(res, samples);
         // queue.reserve(BucketQueueCapacity);
         queue.push(bucket);
         vex_samples.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));
@@ -287,7 +323,8 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
         channel_writer.release();
         if (!channel.find(bucket_queue_writer, thread_id)) {
             BucketQueueQ queue;
-            SampleBucket bucket;    
+            SampleBucket bucket; 
+            bucket.copyInfo(res, samples);   
             // queue.reserve(BucketQueueCapacity);
             queue.push(bucket);
             channel.insert(bucket_queue_writer, std::pair<int, BucketQueueQ>(thread_id, queue));  
@@ -319,6 +356,11 @@ int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sampl
 AutomatteVexCache * get_AutomatteVexCache()
 { 
     return &atm_vex_cache; 
+}
+
+AutomatteImage * get_AutomatteImage()
+{
+    return &atm_image;
 }
 
 

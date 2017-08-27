@@ -17,6 +17,7 @@
 #define DEBUG
 #define VEXSAMPLES
 #define HALTON_FALSE_COLORS
+#define USE_AUTOMATTE_IMAGE
 
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
@@ -32,6 +33,7 @@ namespace HA_HDK {
 template<typename It>
 inline auto myPointer(It const&it) -> decltype(std::addressof(*it)) { return std::addressof(*it); }
 
+static const int32_t AUTOMATTE_CHANNEL_HASH = 449700381; // std::hash<string>("automatte")
 
 enum Automatte_HashType {
     MANTRA,
