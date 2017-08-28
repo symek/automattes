@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <queue>
+#include <atomic>
 #include <tbb/concurrent_vector.h> 
 
 #include <UT/UT_DSOVersion.h>

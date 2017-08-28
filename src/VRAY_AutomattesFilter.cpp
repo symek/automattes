@@ -23,6 +23,7 @@
 #include <limits>
 #include <cmath>
 #include <queue>
+#include <atomic>
 
 //OWN
 #include "VRAY_AutomattesFilter.hpp"
