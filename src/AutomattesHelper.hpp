@@ -25,7 +25,7 @@ public:
     std::atomic<int>    gridresx;
     std::atomic<int>    gridresy;
 
-    const size_t        image_margin = 0;
+    const size_t        image_margin = 3;
     const size_t        max_samples  = 1;
 private:
     std::vector<int>    m_resolution;
