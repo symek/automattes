@@ -76,7 +76,7 @@ size_t SampleBucket::registerBucket()
         const int subpxi = std::floor(pxf) + atm_image_info.image_margin;
         const int subpyi = std::floor(pyf) + atm_image_info.image_margin;
         const int index  = subpyi *atm_image_info.gridresx + subpxi;
-        if(index < atm_image.size()) {
+        if(index < atm_image.size() && index > 0) {
             atm_image.at(index) = vexsample;
         } else {
             // place empty sample here?
@@ -113,6 +113,10 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     if (atm_image.capacity() == 0)
     {
         atm_image.resize(atm_image_info.image_size);
+        for (int i=0; i<atm_image_info.image_size; ++i) {
+            const Sample sample{0,0,0,0,0,0};
+            atm_image[i] = sample;
+        }
     }
 
     if (currentMainThreadId != mainThreadId) {
@@ -120,6 +124,10 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
         AutomatteImage tmp;
         tmp.resize(atm_image_info.image_size);
         atm_image.swap(tmp);
+        for (int i=0; i<atm_image_info.image_size; ++i) {
+            const Sample sample{0,0,0,0,0,0};
+            atm_image[i] = sample;
+        }
         mainThreadId = currentMainThreadId;
     }
 
