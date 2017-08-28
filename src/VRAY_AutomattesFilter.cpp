@@ -276,11 +276,11 @@ VRAY_AutomatteFilter::filter(
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
                         const float pxf = sx * bucket->m_resolution[0] * bucket->m_pixelsamples[0];
                         const float pyf = sy * bucket->m_resolution[1] * bucket->m_pixelsamples[1];
-                        const size_t subpxi = std::floor(pxf);
-                        const size_t subpyi = std::floor(pyf);
-                        const size_t index  = subpyi * bucket->m_resolution[0] * bucket->m_pixelsamples[0] + subpxi;
+                        const int subpxi = std::floor(pxf);
+                        const int subpyi = std::floor(pyf);
+                        const int index  = subpyi * bucket->m_resolution[0] * bucket->m_pixelsamples[0] + subpxi;
 
-                        if (index < vex_image->size()) {
+                        if (index < vex_image->size() && index >= 0) {
                             const Sample & vexsample = vex_image->at(index);
                             const float _id = vexsample[3];
                             // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
