@@ -92,8 +92,8 @@ size_t SampleBucket::registerBucket()
 inline void ImageInfo::set_image_size(const std::vector<int> & res, 
                                       const std::vector<int> & samples) noexcept
 {
-    gridresx = res[0] * samples[0] + 2 * image_margin;
-    gridresy = res[1] * samples[1] + 2 * image_margin;
+    gridresx = res[0] * samples[0] + 2 * image_margin * samples[0];
+    gridresy = res[1] * samples[1] + 2 * image_margin * samples[1];
     image_size = gridresx * gridresy * max_samples;
     m_resolution = res;
     m_samples    = samples;
