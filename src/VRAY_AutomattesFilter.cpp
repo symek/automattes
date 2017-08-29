@@ -283,6 +283,8 @@ VRAY_AutomatteFilter::filter(
 
                         if (index < vex_image->size() && index >= 0) {
                             const Sample & vexsample = vex_image->at(index);
+                            if (vexsample.size() < 6)
+                                continue;
                             const float _id = vexsample[3];
                             // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
                             const float coverage = vexsample[4] * gaussianWeight; 
