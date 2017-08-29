@@ -99,6 +99,11 @@ static void automatte_write(int argc, void *argv[], void *data)
     *result  = static_cast<uint32_t>(size);
 }
 
+static void automatte_close(void *data)
+{
+    close_vex_storage();
+}
+
 
 }// end of HA_HDK namespace
 
@@ -135,7 +140,7 @@ newVEXOp(void *)
         automatte_write,      // Evaluator
         VEX_ALL_CONTEXT,    // Context mask
         NULL,           // init function
-        NULL,           // cleanup function
+        automatte_close,// cleanup function
         VEX_OPTIMIZE_2, // Optimization level
         true);         
     

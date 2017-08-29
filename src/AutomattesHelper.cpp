@@ -13,6 +13,7 @@
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
 #include <UT/UT_PointGrid.h>
+#include <IMG/IMG_DeepShadow.h>
 #include "AutomattesHelper.hpp"
 
 
@@ -34,6 +35,10 @@ static AutomatteVexCache atm_vex_cache;
 static AutomatteImage atm_image;
 static ImageInfo      atm_image_info;
 
+// Another experiment
+#ifdef USE_DEEP_MAP
+static IMG_DeepShadow dsm;
+#endif
 
 const Sample & SampleBucket::at(const int & index) const 
 {
@@ -68,6 +73,10 @@ void SampleBucket::copyInfo(const std::vector<int> & res, const std::vector<int>
 
 size_t SampleBucket::registerBucket() 
 {
+    #ifdef USE_DEEP_MAP
+    IMG_DeepPixelWriter writer(dsm);
+    #endif
+
     const size_t size = m_samples.size();
     for(int i=0; i < size; ++i) {
         const Sample vexsample = m_samples.at(i);
@@ -83,8 +92,16 @@ size_t SampleBucket::registerBucket()
             DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
                 vexsample[0], vexsample[1]);
         }
-    }
+        #ifdef USE_DEEP_MAP
+        writer.open(subpxi, subpyi);
+        const float * sample = reinterpret_cast<const float*>(&vexsample);
+        writer.write(0.0f, sample, 6, 0x00, 0);
+        #endif
 
+    }
+    #ifdef USE_DEEP_MAP
+    writer.close();
+    #endif
     myRegisteredFlag = 1;
     return atm_image.size();
 }
@@ -99,6 +116,13 @@ inline void ImageInfo::set_image_size(const std::vector<int> & res,
     m_samples    = samples;
 }
 
+void close_vex_storage()
+{
+    #ifdef USE_DEEP_MAP
+    dsm.close();
+    #endif
+}
+
 int create_vex_storage(const std::string & channel_name, const int & thread_id, \
     const std::vector<int> & res, const std::vector<int> & samples)
 {
@@ -108,6 +132,12 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 
     if (atm_image_info.image_size == 0) {
         atm_image_info.set_image_size(res, samples);
+         #ifdef USE_DEEP_MAP
+        dsm.setOption("compression", "5");
+        dsm.setOption("zbias", "0.05");
+        dsm.setOption("depth_planes", "zfront,zback");
+        dsm.create("/tmp/automatte.rat", res[0], res[1], samples[0], samples[1]);
+         #endif
     }
 
     if (atm_image.capacity() == 0)
@@ -120,6 +150,12 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     }
 
     if (currentMainThreadId != mainThreadId) {
+        #ifdef USE_DEEP_MAP
+        dsm.setOption("compression", "5");
+        dsm.setOption("zbias", "0.05");
+        dsm.setOption("depth_planes", "zfront,zback");
+        dsm.create("/tmp/automatte.rat", res[0], res[1], samples[0], samples[1]);
+        #endif
         atm_vex_cache.clear();
         AutomatteImage tmp;
         tmp.resize(atm_image_info.image_size);

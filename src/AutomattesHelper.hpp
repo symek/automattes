@@ -1,6 +1,7 @@
 #pragma once
 
 #define DEBUG
+// #define USE_DEEP_MAP
 
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
@@ -63,6 +64,7 @@ int create_vex_storage(const std::string &, const int &,
                        const std::vector<int> &);
 
 int insert_vex_sample (const int32_t &, const int &, const Sample&);
+void close_vex_storage();
 
 inline void compute_atm_image_size(const std::vector<int> & res, 
                                    const std::vector<int> & samples,
