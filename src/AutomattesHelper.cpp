@@ -191,4 +191,9 @@ AutomatteImage * get_AutomatteImage()
     return &atm_image;
 }
 
+ImageInfo * get_ImageInfo()
+{
+    return &atm_image_info; 
+}
+
 } // end of HA_HDK

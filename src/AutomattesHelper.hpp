@@ -71,6 +71,8 @@ inline void compute_atm_image_size(const std::vector<int> & res,
 // Pixel filter access:
 AutomatteVexCache * get_AutomatteVexCache();
 AutomatteImage    * get_AutomatteImage();
+ImageInfo         * get_ImageInfo();
+// ImageInfo
 
 } // end of HA_HDK Space
 

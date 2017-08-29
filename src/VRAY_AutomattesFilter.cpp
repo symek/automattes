@@ -190,8 +190,9 @@ VRAY_AutomatteFilter::filter(
 
     #ifdef VEXSAMPLES
 
-        AutomatteVexCache * vex_cache = get_AutomatteVexCache();
-        AutomatteImage    * vex_image = get_AutomatteImage(); // ?
+        const AutomatteVexCache * const vex_cache = get_AutomatteVexCache();
+        const AutomatteImage    * const vex_image = get_AutomatteImage(); // ?
+        const ImageInfo         * const atm_image_info  = get_ImageInfo();
         VEX_Samples       * samples   = nullptr;
 
         AutomatteVexCache::const_accessor  channel_reader;
@@ -274,11 +275,11 @@ VRAY_AutomatteFilter::filter(
 
                         const float sx = colordata[vectorsize*sourceidx+0]; // G&B are reserved for id and coverage by bellow setup
                         const float sy = colordata[vectorsize*sourceidx+3]; // se we end up with using R&A for NDC coords.
-                        const float pxf = sx * bucket->m_resolution[0] * bucket->m_pixelsamples[0];
-                        const float pyf = sy * bucket->m_resolution[1] * bucket->m_pixelsamples[1];
-                        const int subpxi = std::floor(pxf);
-                        const int subpyi = std::floor(pyf);
-                        const int index  = subpyi * bucket->m_resolution[0] * bucket->m_pixelsamples[0] + subpxi;
+                        const float pxf = sx * atm_image_info->gridresx;
+                        const float pyf = sy * atm_image_info->gridresy; 
+                        const int subpxi = std::floor(pxf) + atm_image_info->image_margin;
+                        const int subpyi = std::floor(pyf) + atm_image_info->image_margin;
+                        const int index  = subpyi *atm_image_info->gridresx + subpxi;
 
                         if (index < vex_image->size() && index >= 0) {
                             const Sample & vexsample = vex_image->at(index);
