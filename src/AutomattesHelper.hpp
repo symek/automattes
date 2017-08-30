@@ -41,7 +41,7 @@ public:
     size_t size() const noexcept { return m_samples.size(); }
     int isRegistered() const noexcept { return myRegisteredFlag; } 
     void clear() noexcept;
-    void push_back(const Sample & sample) { m_samples.push_back(sample); }
+    void push_back(const Sample & sample) { m_samples.emplace_back(sample); }
     void copyInfo(const SampleBucket *) noexcept;
     void copyInfo(const std::vector<int> &, const std::vector<int> &) noexcept;
     size_t registerBucket();

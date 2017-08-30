@@ -49,8 +49,9 @@ const Sample & SampleBucket::at(const int & index) const
 
 void SampleBucket::clear() noexcept
 { 
-    std::vector<Sample> tmp;
-    m_samples.swap(tmp); 
+    //std::vector<Sample> tmp;
+    m_samples.clear(); 
+    myRegisteredFlag = 0;
 }
 
 
@@ -86,7 +87,9 @@ size_t SampleBucket::registerBucket()
         const int subpyi = std::floor(pyf) + atm_image_info.image_margin;
         const int index  = subpyi *atm_image_info.gridresx + subpxi;
         if(index < atm_image.size() && index > 0) {
-            atm_image.at(index) = vexsample;
+            Sample & pixel = atm_image.at(index);
+            for (uint i = 0; i < 6; ++i)
+                pixel.push_back(vexsample[i]);
         } else {
             // place empty sample here?
             DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
@@ -127,7 +130,7 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     const std::vector<int> & res, const std::vector<int> & samples)
 {
 
-    std::lock_guard<std::mutex> guard(automattes_mutex);
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
     const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
 
     if (atm_image_info.image_size == 0) {
@@ -143,13 +146,14 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     if (atm_image.capacity() == 0)
     {
         atm_image.resize(atm_image_info.image_size);
-        for (int i=0; i<atm_image_info.image_size; ++i) {
-            const Sample sample{0,0,0,0,0,0};
-            atm_image[i] = sample;
-        }
+        // for (int i=0; i<atm_image_info.image_size; ++i) {
+        //     const Sample sample{0,0,0,0,0,0};
+        //     atm_image[i] = sample;
+        // }
     }
 
-    if (currentMainThreadId != mainThreadId) {
+    if (currentMainThreadId != mainThreadId &&\
+         atm_image.size() != atm_image_info.image_size) {
         #ifdef USE_DEEP_MAP
         dsm.setOption("compression", "5");
         dsm.setOption("zbias", "0.05");
@@ -158,12 +162,12 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
         #endif
         atm_vex_cache.clear();
         AutomatteImage tmp;
-        tmp.resize(atm_image_info.image_size);
+        atm_image.resize(atm_image_info.image_size);
         atm_image.swap(tmp);
-        for (int i=0; i<atm_image_info.image_size; ++i) {
-            const Sample sample{0,0,0,0,0,0};
-            atm_image[i] = sample;
-        }
+        // for (int i=0; i<atm_image_info.image_size; ++i) {
+        //     const Sample sample{0,0,0,0,0,0};
+        //     atm_image[i] = sample;
+        // }
         mainThreadId = currentMainThreadId;
     }
 
@@ -214,6 +218,7 @@ int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sampl
     SampleBucket & bucket = queue->second.front();
     bucket.push_back(sample);
     return bucket.size();
+    // return 1;
 }
 
 
