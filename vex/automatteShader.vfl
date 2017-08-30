@@ -7,18 +7,27 @@ fog automatte_shader(export vector4 objectid = 0)
     string       mat_name;
     vector       res;
     vector       samples;
+    
     int result = renderstate("object:surface", mat_name);
         result = renderstate("image:resolution", res);
         result = renderstate("renderer:samples", samples);
     int mat_id = random_shash(mat_name);
     int obj_id = getobjectid();
+    vector nP  = toNDC(P);
 
     // Store vex sample into RAM
-    vector nP  = toNDC(P);// * res;
     int handle = automatte_open("automatte", res, samples);
-    int result2= automatte_write(handle, set(nP.x, nP.y, Pz), obj_id, luminance(Of));
-    // printf("%i,", result2);
+
+    if (!handle)
+        printf("Can't open automatte storage");
+
+    float opacity = luminance(Of);
+    int   success = automatte_write(handle, set(nP.x, nP.y, Pz), obj_id, opacity);
+
+    if (!success)
+        printf("Can't save sample to automatte storage");
 
     // export ndc coordintes to pixel filter.
-    objectid   = set(nP.x, (float)obj_id, (float)mat_id*min(1, handle * result2), nP.y);
+    objectid   = set(nP.x, (float)obj_id, (float)mat_id, nP.y);
+
 }
