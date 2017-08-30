@@ -134,7 +134,7 @@ newVEXOp(void *)
         VEX_ALL_CONTEXT,    // Context mask
         NULL,           // init function
         NULL,           // cleanup function
-        VEX_OPTIMIZE_0 // Optimization level
+        VEX_OPTIMIZE_2 // Optimization level
         ); 
     new VEX_VexOp("automatte_write@&IIVFF",  // Signature
         automatte_write,      // Evaluator
