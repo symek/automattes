@@ -283,32 +283,51 @@ VRAY_AutomatteFilter::filter(
 
                         if (index < vex_image->size() && index >= 0) {
                             const Sample & vexsample = vex_image->at(index);
+
+                            // FIXME: hardcoded length of the sample.
                             if (vexsample.size() < 6)
                                 continue;
-                            const float _id = vexsample[3];
-                            // FIXME: cov. should be a sum of all samples behind the current one. (Pz>current sample)
-                            const float coverage = vexsample[4] * gaussianWeight; 
-                            #ifdef HALTON_FALSE_COLORS
-                            // borrowed from: https://github.com/MercenariesEngineering/openexrid
-                            const float primes[3] = {2,3,5};
-                                sample[0] += gaussianWeight * halton(primes[0], _id);
-                                sample[1] += gaussianWeight * halton(primes[1], _id);
-                                sample[2] += gaussianWeight * halton(primes[2], _id); 
-                            #else
-                                uint seed  = static_cast<uint>(_id);
-                                sample[1] += gaussianWeight * SYSfastRandom(seed);
-                                     seed += 2345;
-                                sample[2] += gaussianWeight * SYSfastRandom(seed); 
-                            #endif
 
-                            gaussianNorm += gaussianWeight;
+                            // Coverege  is a sum of all samples behind the current one?
+                            const int deep_samples = vexsample.size() / 6;
+                            for (int i=0; i < deep_samples; ++i) {
+                                const int offset = i*6;
+                                const float _id = vexsample[offset+3];
+                                int behind_index = offset;
+                                float coverage = 0.f;
 
-                            // Sumarize coverage per hash.
-                            if (hash_map.find(_id) == hash_map.end()) {
-                                hash_map.insert(std::pair<float, float>(_id, coverage));
-                            } else {
-                                hash_map[_id] += coverage;
+                                // I assume samples are sorted Pz wise from VEX.
+                                while(behind_index < deep_samples && coverage < 1.0f) {
+                                    behind_index++;
+                                    coverage += vexsample[behind_index+4];
+                                }
+
+                                coverage = SYSmin(coverage, 1.f);
+                                coverage *= gaussianWeight;
+                                
+                                #ifdef HALTON_FALSE_COLORS
+                                // borrowed from: https://github.com/MercenariesEngineering/openexrid
+                                const float primes[3] = {2,3,5};
+                                    sample[0] += gaussianWeight * halton(primes[0], _id);
+                                    sample[1] += gaussianWeight * halton(primes[1], _id);
+                                    sample[2] += gaussianWeight * halton(primes[2], _id); 
+                                #else
+                                    uint seed  = static_cast<uint>(_id);
+                                    sample[1] += gaussianWeight * SYSfastRandom(seed);
+                                         seed += 2345;
+                                    sample[2] += gaussianWeight * SYSfastRandom(seed); 
+                                #endif
+
+                                gaussianNorm += gaussianWeight;
+
+                                // Sumarize coverage per hash.
+                                if (hash_map.find(_id) == hash_map.end()) {
+                                    hash_map.insert(std::pair<float, float>(_id, coverage));
+                                } else {
+                                    hash_map[_id] += coverage;
+                                }
                             }
+
                         } else {
                             // This should not happen at all:
                             sample[0]  = gaussianWeight * 1.f;

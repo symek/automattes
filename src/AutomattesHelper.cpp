@@ -86,15 +86,17 @@ size_t SampleBucket::registerBucket()
         const int subpxi = std::floor(pxf) + atm_image_info.image_margin;
         const int subpyi = std::floor(pyf) + atm_image_info.image_margin;
         const int index  = subpyi *atm_image_info.gridresx + subpxi;
+
         if(index < atm_image.size() && index > 0) {
             Sample & pixel = atm_image.at(index);
-            for (uint i = 0; i < 6; ++i)
+            for (uint i = 0; i < vexsample.size(); ++i)
                 pixel.push_back(vexsample[i]);
         } else {
             // place empty sample here?
             DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
                 vexsample[0], vexsample[1]);
         }
+
         #ifdef USE_DEEP_MAP
         writer.open(subpxi, subpyi);
         const float * sample = reinterpret_cast<const float*>(&vexsample);
