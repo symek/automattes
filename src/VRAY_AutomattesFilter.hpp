@@ -34,6 +34,7 @@ template<typename It>
 inline auto myPointer(It const&it) -> decltype(std::addressof(*it)) { return std::addressof(*it); }
 
 static const int32_t AUTOMATTE_CHANNEL_HASH = 449700381; // std::hash<string>("automatte")
+static const size_t  FLOATS_IN_SAMPLE = 6;
 
 enum Automatte_HashType {
     MANTRA,

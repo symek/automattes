@@ -285,25 +285,25 @@ VRAY_AutomatteFilter::filter(
                             const Sample & vexsample = vex_image->at(index);
 
                             // FIXME: hardcoded length of the sample.
-                            if (vexsample.size() < 6)
+                            if (vexsample.size() < FLOATS_IN_SAMPLE)
                                 continue;
 
                             // Coverege  is a sum of all samples behind the current one?
-                            const int deep_samples = vexsample.size() / 6;
+                            const int deep_samples = vexsample.size() / FLOATS_IN_SAMPLE;
                             for (int i=0; i < deep_samples; ++i) {
-                                const int offset = i*6;
+                                const int offset = i*FLOATS_IN_SAMPLE;
                                 const float _id = vexsample[offset+3];
-                                int behind_index = offset;
+                                int behind_index = i;
                                 float coverage = 0.f;
-
                                 // I assume samples are sorted Pz wise from VEX.
                                 while(behind_index < deep_samples && coverage < 1.0f) {
                                     behind_index++;
-                                    coverage += vexsample[behind_index+4];
+                                    coverage += vexsample[FLOATS_IN_SAMPLE*behind_index+4] * gaussianWeight;
                                 }
 
                                 coverage = SYSmin(coverage, 1.f);
-                                coverage *= gaussianWeight;
+                                coverage = SYSmax(coverage, 0.f);
+                                // coverage *= gaussianWeight;
                                 
                                 #ifdef HALTON_FALSE_COLORS
                                 // borrowed from: https://github.com/MercenariesEngineering/openexrid
