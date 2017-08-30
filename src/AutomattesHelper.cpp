@@ -24,7 +24,7 @@ namespace HA_HDK {
 static std::mutex automattes_mutex;
 
 // make it atomic;
-static ut_thread_id_t mainThreadId = 0;
+static std::atomic<ut_thread_id_t> mainThreadId;
 
 static const size_t BucketQueueCapacity = 1024;
 static const size_t max_opacity_samples = 1;
@@ -111,14 +111,20 @@ size_t SampleBucket::registerBucket()
     return atm_image.size();
 }
 
-inline void ImageInfo::set_image_size(const std::vector<int> & res, 
-                                      const std::vector<int> & samples) noexcept
+bool ImageInfo::update_size(const std::vector<int> & res, 
+                            const std::vector<int> & samples) noexcept
 {
-    gridresx = res[0] * samples[0] + 2 * image_margin * samples[0];
-    gridresy = res[1] * samples[1] + 2 * image_margin * samples[1];
-    image_size = gridresx * gridresy * max_samples;
-    m_resolution = res;
-    m_samples    = samples;
+    // if ( res[0] != m_resolution[0] || res[1] != m_resolution[1] ||
+        // samples[0] != m_samples[0] || samples[1] != m_samples[1] ) {
+        gridresx = res[0] * samples[0] + 2 * image_margin * samples[0];
+        gridresy = res[1] * samples[1] + 2 * image_margin * samples[1];
+        image_size = gridresx * gridresy * max_samples;
+        m_resolution = res;
+        m_samples    = samples;
+        // return true;
+    // } 
+
+    return false;
 }
 
 void close_vex_storage()
@@ -128,51 +134,27 @@ void close_vex_storage()
     #endif
 }
 
+
 int create_vex_storage(const std::string & channel_name, const int & thread_id, \
     const std::vector<int> & res, const std::vector<int> & samples)
 {
 
-    // std::lock_guard<std::mutex> guard(automattes_mutex);
     const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
 
+    // std::lock_guard<std::mutex> guard(automattes_mutex);
     if (atm_image_info.image_size == 0) {
-        atm_image_info.set_image_size(res, samples);
-         #ifdef USE_DEEP_MAP
-        dsm.setOption("compression", "5");
-        dsm.setOption("zbias", "0.05");
-        dsm.setOption("depth_planes", "zfront,zback");
-        dsm.create("/tmp/automatte.rat", res[0], res[1], samples[0], samples[1]);
-         #endif
-    }
-
-    if (atm_image.capacity() == 0)
-    {
-        atm_image.resize(atm_image_info.image_size);
-        // for (int i=0; i<atm_image_info.image_size; ++i) {
-        //     const Sample sample{0,0,0,0,0,0};
-        //     atm_image[i] = sample;
-        // }
-    }
-
-    if (currentMainThreadId != mainThreadId &&\
-         atm_image.size() != atm_image_info.image_size) {
-        #ifdef USE_DEEP_MAP
-        dsm.setOption("compression", "5");
-        dsm.setOption("zbias", "0.05");
-        dsm.setOption("depth_planes", "zfront,zback");
-        dsm.create("/tmp/automatte.rat", res[0], res[1], samples[0], samples[1]);
-        #endif
-        atm_vex_cache.clear();
-        AutomatteImage tmp;
-        atm_image.resize(atm_image_info.image_size);
-        atm_image.swap(tmp);
-        // for (int i=0; i<atm_image_info.image_size; ++i) {
-        //     const Sample sample{0,0,0,0,0,0};
-        //     atm_image[i] = sample;
-        // }
+        atm_image_info.update_size(res, samples);
+        atm_image.resize(atm_image_info.image_size);  
         mainThreadId = currentMainThreadId;
     }
 
+    if (currentMainThreadId != mainThreadId && \
+        atm_image_info.image_size != atm_image.size()) {
+        atm_vex_cache.clear();
+        atm_image.resize(atm_image_info.image_size);
+        mainThreadId = currentMainThreadId;
+    }
+     
     AutomatteVexCache::accessor channel_writer;
     VEX_Samples::accessor       bucket_queue_writer;
     std::hash<std::string>      hasher;

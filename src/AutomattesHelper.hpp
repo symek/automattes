@@ -18,8 +18,8 @@ class ImageInfo
 {
 public:
     ImageInfo() : image_size(0), gridresx(0), gridresy(0) {}
-    void set_image_size(const std::vector<int> & res, 
-                        const std::vector<int> & samples) noexcept;
+    bool update_size(const std::vector<int> & res, 
+                     const std::vector<int> & samples) noexcept;
 
 
     std::atomic<size_t> image_size;//?
@@ -29,8 +29,8 @@ public:
     const size_t        image_margin = 3;
     const size_t        max_samples  = 1;
 private:
-    std::vector<int>    m_resolution;
-    std::vector<int>    m_samples;
+    std::vector<int>    m_resolution{0,0};
+    std::vector<int>    m_samples{0,0};
 
 };
 
