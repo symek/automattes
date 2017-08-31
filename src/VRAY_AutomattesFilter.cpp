@@ -292,13 +292,12 @@ VRAY_AutomatteFilter::filter(
                             const int deep_samples = vexsample.size() / FLOATS_IN_SAMPLE;
                             for (int i=0; i < deep_samples; ++i) {
                                 const int offset = i*FLOATS_IN_SAMPLE;
-                                const float _id = vexsample[offset+3];
-                                int behind_index = i;
-                                float coverage = 0.f;
+                                const float _id  = vexsample[offset+3];
+                                float coverage   = vexsample[offset+4];
+
                                 // I assume samples are sorted Pz wise from VEX.
-                                while(behind_index < deep_samples && coverage < 1.0f) {
-                                    behind_index++;
-                                    coverage += vexsample[FLOATS_IN_SAMPLE*behind_index+4] * gaussianWeight;
+                                for (int depth = i; depth < deep_samples; ++depth) {
+                                    coverage += vexsample[FLOATS_IN_SAMPLE*depth+4] * gaussianWeight;
                                 }
 
                                 coverage = SYSmin(coverage, 1.f);
