@@ -7,8 +7,22 @@
 #include <queue>
 #include <atomic>
 
+#define TBB_CACHE_ALIGNED_ALLOC
+#define TBB_PREVIEW_MEMORY_POOL 1
+
+
+#ifdef TBB_PREVIEW_MEMORY_POOL
+#include "tbb/memory_pool.h"
+#include "tbb/scalable_allocator.h"
+#endif
+
 #include <tbb/concurrent_vector.h>
 #include <tbb/concurrent_hash_map.h>
+
+#ifdef TBB_CACHE_ALIGNED_ALLOC
+#include "tbb/cache_aligned_allocator.h"
+#include "tbb/scalable_allocator.h"
+#endif
 
 #include <UT/UT_DSOVersion.h>
 #include <UT/UT_Thread.h>
@@ -40,17 +54,28 @@ static ImageInfo      atm_image_info;
 static IMG_DeepShadow dsm;
 #endif
 
+#ifdef TBB_PREVIEW_MEMORY_POOL
+static tbb::memory_pool<tbb::scalable_allocator<SampleVector>> sample_memory_pool;
+#endif
+
+SampleBucket::SampleBucket()
+{
+    #ifdef TBB_PREVIEW_MEMORY_POOL
+    m_samples =  new SampleVector(sample_vector_allocator_t(sample_memory_pool));
+    #endif
+}
+
 const Sample & SampleBucket::at(const int & index) const 
 {
-    UT_ASSERT (index < m_samples.size()) ;
-    return m_samples.at(index);
+    UT_ASSERT (index < m_samples->size()) ;
+    return m_samples->at(index);
 }
 
 
 void SampleBucket::clear() noexcept
 { 
-    //std::vector<Sample> tmp;
-    m_samples.clear(); 
+
+    m_samples->clear(); 
     myRegisteredFlag = 0;
 }
 
@@ -78,9 +103,9 @@ size_t SampleBucket::registerBucket()
     IMG_DeepPixelWriter writer(dsm);
     #endif
 
-    const size_t size = m_samples.size();
+    const size_t size = m_samples->size();
     for(int i=0; i < size; ++i) {
-        const Sample vexsample = m_samples.at(i);
+        const Sample vexsample = m_samples->at(i);
         const float pxf = vexsample[0] * atm_image_info.gridresx;
         const float pyf = vexsample[1] * atm_image_info.gridresy;
         const int subpxi = std::floor(pxf) + atm_image_info.image_margin;
@@ -89,8 +114,9 @@ size_t SampleBucket::registerBucket()
 
         if(index < atm_image.size() && index > 0) {
             Sample & pixel = atm_image.at(index);
-            for (uint i = 0; i < vexsample.size(); ++i)
-                pixel.push_back(vexsample[i]);
+            pixel = Sample(vexsample);
+            // for (uint i = 0; i < vexsample.size(); ++i)
+                // pixel.push_back(vexsample[i]);
         } else {
             // place empty sample here?
             DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
@@ -104,6 +130,7 @@ size_t SampleBucket::registerBucket()
         #endif
 
     }
+    clear();
     #ifdef USE_DEEP_MAP
     writer.close();
     #endif
@@ -139,21 +166,44 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
     const std::vector<int> & res, const std::vector<int> & samples)
 {
 
-    const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
-
     // std::lock_guard<std::mutex> guard(automattes_mutex);
+    const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
     if (atm_image_info.image_size == 0) {
         atm_image_info.update_size(res, samples);
-        atm_image.resize(atm_image_info.image_size);  
         mainThreadId = currentMainThreadId;
     }
 
-    if (currentMainThreadId != mainThreadId && \
-        atm_image_info.image_size != atm_image.size()) {
-        atm_vex_cache.clear();
+    if (atm_image.capacity() == 0)
+    {
         atm_image.resize(atm_image_info.image_size);
+         mainThreadId = currentMainThreadId;
+
+    }
+
+    if (currentMainThreadId != mainThreadId &&\
+        atm_image.size() != atm_image_info.image_size) {
+       
+        atm_vex_cache.clear();
+        AutomatteImage tmp;
+        atm_image.resize(atm_image_info.image_size);
+        atm_image.swap(tmp);
+
         mainThreadId = currentMainThreadId;
     }
+
+
+    // if (atm_image_info.image_size == 0) {
+    //     atm_image_info.update_size(res, samples);
+    //     atm_image.resize(atm_image_info.image_size);  
+    //     mainThreadId = currentMainThreadId;
+    // }
+
+    // if (currentMainThreadId != mainThreadId && \
+    //     atm_image_info.image_size != atm_image.size()) {
+    //     atm_vex_cache.clear();
+    //     atm_image.resize(atm_image_info.image_size);
+    //     mainThreadId = currentMainThreadId;
+    // }
      
     AutomatteVexCache::accessor channel_writer;
     VEX_Samples::accessor       bucket_queue_writer;
@@ -192,7 +242,7 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 }
 
 
-int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sample & sample)
+int insert_vex_sample(const int32_t & handle, const int & thread_id, const UT_StackBuffer<float> & sample)
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     AutomatteVexCache::const_accessor channel;
@@ -200,7 +250,9 @@ int insert_vex_sample(const int32_t & handle, const int & thread_id, const Sampl
     VEX_Samples::accessor queue;
     channel->second.find(queue, thread_id);
     SampleBucket & bucket = queue->second.front();
-    bucket.push_back(sample);
+    const Sample vex{sample[0], sample[1], sample[2], 
+        sample[3], sample[4], sample[5]};
+    bucket.push_back(vex);
     return bucket.size();
     // return 1;
 }

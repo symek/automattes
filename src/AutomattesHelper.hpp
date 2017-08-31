@@ -3,6 +3,7 @@
 #define DEBUG
 // #define USE_DEEP_MAP
 
+
 #ifdef DEBUG
 #define DEBUG_PRINT(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
 #else
@@ -12,7 +13,19 @@
 namespace HA_HDK {
 
 // our fixed sample: x,y,z,id,Af 
-typedef std::vector<float> Sample;
+#ifdef TBB_CACHE_ALIGNED_ALLOC
+typedef std::vector<float, tbb::scalable_allocator<float>> Sample;
+#else 
+typedef std::vector<float> Sample;   
+#endif
+
+#ifdef TBB_PREVIEW_MEMORY_POOL
+typedef tbb::memory_pool_allocator<Sample> sample_vector_allocator_t;
+typedef std::vector<Sample, sample_vector_allocator_t> SampleVector;
+#else
+// typedef std::allocator<Sample>  sample_vector_allocator_t;
+typedef std::vector<Sample> SampleVector;
+#endif
 
 class ImageInfo
 {
@@ -37,16 +50,18 @@ private:
 class SampleBucket
 {
 public:
+    SampleBucket();
     const Sample & at(const int & index) const;
-    size_t size() const noexcept { return m_samples.size(); }
+    size_t size() const noexcept { return m_samples->size(); }
     int isRegistered() const noexcept { return myRegisteredFlag; } 
     void clear() noexcept;
-    void push_back(const Sample & sample) { m_samples.emplace_back(sample); }
+    void push_back(const Sample & sample) { m_samples->emplace_back(sample); }
     void copyInfo(const SampleBucket *) noexcept;
     void copyInfo(const std::vector<int> &, const std::vector<int> &) noexcept;
     size_t registerBucket();
 private:
-    std::vector<Sample> m_samples;
+    // std::vector<Sample> m_samples;
+    SampleVector * m_samples;
     int myRegisteredFlag = 0;
 public:
     uint m_resolution[2]   = {0,0};
@@ -63,7 +78,7 @@ int create_vex_storage(const std::string &, const int &,
                        const std::vector<int> &, 
                        const std::vector<int> &);
 
-int insert_vex_sample (const int32_t &, const int &, const Sample&);
+int insert_vex_sample (const int32_t &, const int &, const UT_StackBuffer<float> &);
 void close_vex_storage();
 
 inline void compute_atm_image_size(const std::vector<int> & res, 

@@ -412,7 +412,7 @@ VRAY_AutomatteFilter::filter(
 
     #ifdef VEXSAMPLES 
         // DEBUG_PRINT("Filter thread: %i,\n", thread_id);
-        bucket->clear();
+        // bucket->clear();
         // SampleBucket newbucket;
         // newbucket.copyInfo(bucket);
         // bucket_queue->second.pop();

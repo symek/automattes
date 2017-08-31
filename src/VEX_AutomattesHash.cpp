@@ -94,7 +94,11 @@ static void automatte_write(int argc, void *argv[], void *data)
 
     const int thread_id = SYSgetSTID();
     const float thf = static_cast<float>(thread_id);
-    Sample sample = {P->x(), P->y(), P->z(), *id, *Af, thf};
+
+    UT_StackBuffer<float> sample(6);
+    sample[0] = P->x(); sample[1] = P->y(); sample[2] = P->z();
+    sample[3] = *id;    sample[4] = *Af;    sample[5] = thf;
+    // const Sample sample{P->x(), P->y(), P->z(), *id, *Af, thf};
     int size = insert_vex_sample(*handle, thread_id, sample);
     *result  = static_cast<uint32_t>(size);
 }
