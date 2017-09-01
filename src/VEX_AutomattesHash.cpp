@@ -22,12 +22,34 @@
 
 #include "MurmurHash3.h"
 #include "AutomattesHelper.hpp"
- 
-#if defined(NO_MUTEX_IN_BUCKETVECTOR) || defined(TBB_VEX_STORE)
 #include <tbb/concurrent_hash_map.h>
-#endif
+
 
 namespace HA_HDK {
+
+class ShaderStore {
+    typedef tbb::concurrent_hash_map
+    <uint32_t, AutomatteVexCache> AutomatteShaders; 
+    typedef tbb::concurrent_hash_map
+    <uint32_t, uint32_t> ThreadAcountant;
+
+public:
+    uint32_t register(uint32_t thread_id) {
+        if (m_threads.size() == 0) {
+            m_threads.push_back(0);
+            AutomatteShaders::accessor writer;
+            AutomatteVexCache cache;
+            m_shaders.insert(writer, cache);
+            return 0;
+        }
+        m_threads::iterator it = m_threads.begin();
+        for(; it!=m_threads.end(); ++it) {
+
+        }
+    }
+    ThreadAcountant  m_threads;
+    AutomatteShaders m_shaders;
+};
 
 static const uint32_t background = 2287214504; // precomputed from  MurmurHash3_x86_32("_ray_fog_object_internal_xyzzy", ...);
 
@@ -71,14 +93,17 @@ static void automatte_open(int argc, void *argv[], void *data)
 {
     int            *result  = (int*)            argv[0];
     const char     *channel = (const char*)     argv[1];
-    const VEXvec3  *res     = (const VEXvec3*)  argv[2];
-    const VEXvec3  *samples = (const VEXvec3*)  argv[3];
+    const VEXvec3  *res     = (const VEXvec3*)  argv[1];
+    const VEXvec3  *samples = (const VEXvec3*)  argv[2];
 
-    const int thread_id = SYSgetSTID();
+    const uint32_t thread_id     = SYSgetSTID();
+    const uint32_t mainThread_id = UT_Thread::getMainThreadId();
 
+    // std::cout << "automatte_open: " << mainThread_id << ": " << thread_id << "\n";
+   
     const std::vector<int> image_resolution {(int)res->x(), (int)res->y()};
     const std::vector<int> pixel_samples    {(int)samples->x(), (int)samples->y()};
-    const std::string        channel_name(channel);
+    const std::string      channel_name(channel);
    
     result[0] = create_vex_storage(channel_name, thread_id, image_resolution, pixel_samples);
 
@@ -108,6 +133,13 @@ static void automatte_close(void *data)
     close_vex_storage();
 }
 
+static void * automatte_open_init()
+{
+    const uint32_t thread_id     = SYSgetSTID();
+    const uint32_t mainThread_id = UT_Thread::getMainThreadId();
+    std::cout << "automatte_open_init: " << mainThread_id << ": " << thread_id << "is main: " \
+    << UT_Thread::isMainThread() << "\n";
+}
 
 }// end of HA_HDK namespace
 
@@ -135,14 +167,14 @@ newVEXOp(void *)
         true);
     new VEX_VexOp("automatte_open@&ISVV",  // Signature
         automatte_open,      // Evaluator
-        VEX_ALL_CONTEXT,    // Context mask
-        NULL,           // init function
+        VEX_SHADING_CONTEXT,    // Context mask
+        automatte_open_init,// init function
         NULL,           // cleanup function
-        VEX_OPTIMIZE_2 // Optimization level
-        ); 
+        VEX_OPTIMIZE_2, // Optimization level
+        true); 
     new VEX_VexOp("automatte_write@&IIVFF",  // Signature
         automatte_write,      // Evaluator
-        VEX_ALL_CONTEXT,    // Context mask
+        VEX_SHADING_CONTEXT,    // Context mask
         NULL,           // init function
         automatte_close,// cleanup function
         VEX_OPTIMIZE_2, // Optimization level
