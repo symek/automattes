@@ -9,6 +9,7 @@
 #include <memory>
 #include <map>
 #include <queue>
+#include <mutex>
 #include <atomic>
 #include <tbb/concurrent_vector.h> 
 
@@ -26,32 +27,50 @@
 
 
 namespace HA_HDK {
-
 class ShaderStore {
+
+    typedef uint32_t shader_id_t;
     typedef tbb::concurrent_hash_map
-    <uint32_t, AutomatteVexCache> AutomatteShaders; 
-    typedef tbb::concurrent_hash_map
-    <uint32_t, uint32_t> ThreadAcountant;
+    <uint32_t, shader_id_t> ThreadAccountant;
+    std::mutex register_lock;
 
 public:
-    uint32_t register(uint32_t thread_id) {
-        if (m_threads.size() == 0) {
-            m_threads.push_back(0);
-            AutomatteShaders::accessor writer;
-            AutomatteVexCache cache;
-            m_shaders.insert(writer, cache);
-            return 0;
-        }
-        m_threads::iterator it = m_threads.begin();
-        for(; it!=m_threads.end(); ++it) {
-
+    ShaderStore(): current_cache(-1) {}
+    shader_id_t * register_shader(uint32_t thread_id) {
+        std::lock_guard<std::mutex> guard(register_lock);
+        ThreadAccountant::accessor threads_writer;
+        if (current_cache == -1) {
+            m_threads.insert(threads_writer, std::pair<uint32_t, shader_id_t>(thread_id, 0));
+            create_vex_storage2(threads_writer->second);
+            current_cache = threads_writer->second;
+            std::cout << "Creating new shader : " << current_cache << "\n";
+            return &(threads_writer->second);
+        } else {
+            if (!m_threads.find(threads_writer, thread_id)) {
+                m_threads.insert(threads_writer, 
+                    std::pair<uint32_t, shader_id_t>(thread_id, 0));
+            } else {
+                threads_writer->second++;   
+                if (threads_writer->second > current_cache) {
+                    std::cout << "This is second shader? : " << current_cache << "\n";
+                    create_vex_storage2(threads_writer->second);
+                    current_cache = threads_writer->second;
+                }
+            }
+                
+            std::cout << "Returning current one: " << current_cache << "\n";
+            return &(threads_writer->second);
         }
     }
-    ThreadAcountant  m_threads;
-    AutomatteShaders m_shaders;
+private:
+    std::atomic<shader_id_t> 
+    current_cache;
+    ThreadAccountant m_threads;
 };
 
 static const uint32_t background = 2287214504; // precomputed from  MurmurHash3_x86_32("_ray_fog_object_internal_xyzzy", ...);
+
+static ShaderStore shader_store;
 
 // From Cryptomatte specification[1]
 float hash_to_float(uint32_t hash)
@@ -89,24 +108,38 @@ murmurhash3I(int argc,  void *argv[], void *data)
     *result = (m3hash != background) ? m3hash : 0;
 }
 
+
+static void * automatte_open_init()
+{
+    const uint32_t thread_id     = SYSgetSTID();
+    const uint32_t numProcessors = UT_Thread::getNumProcessors ();
+    std::cout << "automatte_open_init: " << numProcessors << ": " << thread_id << "is main: " \
+    << UT_Thread::isMainThread() << "\n";
+    void * shader_id_ptr = static_cast<void*>(shader_store.register_shader(thread_id));
+    return shader_id_ptr;
+}
+
+
 static void automatte_open(int argc, void *argv[], void *data)
 {
     int            *result  = (int*)            argv[0];
     const char     *channel = (const char*)     argv[1];
-    const VEXvec3  *res     = (const VEXvec3*)  argv[1];
-    const VEXvec3  *samples = (const VEXvec3*)  argv[2];
+    const VEXvec3  *res     = (const VEXvec3*)  argv[2];
+    const VEXvec3  *samples = (const VEXvec3*)  argv[3];
 
-    const uint32_t thread_id     = SYSgetSTID();
-    const uint32_t mainThread_id = UT_Thread::getMainThreadId();
+    const uint32_t thread_id  = SYSgetSTID();
+    const uint32_t shader_id  = *static_cast<uint32_t*>(data);
+    const std::vector<int> image_res    {(int)res->x(), (int)res->y()};
+    const std::vector<int> pix_samples  {(int)samples->x(), (int)samples->y()};
+    const std::string      channel_name (channel);
+    int allocated = allocate_vex_storage(shader_id, thread_id, image_res, pix_samples);
+     // std::cout << "automatte_open shader_id: " << shader_id << " allocated: " << allocated << "\n";
 
-    // std::cout << "automatte_open: " << mainThread_id << ": " << thread_id << "\n";
-   
-    const std::vector<int> image_resolution {(int)res->x(), (int)res->y()};
-    const std::vector<int> pixel_samples    {(int)samples->x(), (int)samples->y()};
-    const std::string      channel_name(channel);
-   
-    result[0] = create_vex_storage(channel_name, thread_id, image_resolution, pixel_samples);
-
+    if (allocated) {
+        result[0] = shader_id+1; // from index to bool 
+    } else {
+        result[0] = 0;
+    }
 }
 
 static void automatte_write(int argc, void *argv[], void *data)
@@ -117,14 +150,16 @@ static void automatte_write(int argc, void *argv[], void *data)
     const VEXfloat *id     = (const VEXfloat*) argv[3];
     const VEXfloat *Af     = (const VEXfloat*) argv[4];
 
-    const int thread_id = SYSgetSTID();
+    const uint32_t thread_id = SYSgetSTID();
     const float thf = static_cast<float>(thread_id);
 
     UT_StackBuffer<float> sample(6);
     sample[0] = P->x(); sample[1] = P->y(); sample[2] = P->z();
     sample[3] = *id;    sample[4] = *Af;    sample[5] = thf;
     // const Sample sample{P->x(), P->y(), P->z(), *id, *Af, thf};
-    int size = insert_vex_sample(*handle, thread_id, sample);
+    // bool to index...
+    const shader_id_t shader = (*handle) - 1;
+    int size = insert_vex_sample(shader, thread_id, sample);
     *result  = static_cast<uint32_t>(size);
 }
 
@@ -133,13 +168,7 @@ static void automatte_close(void *data)
     close_vex_storage();
 }
 
-static void * automatte_open_init()
-{
-    const uint32_t thread_id     = SYSgetSTID();
-    const uint32_t mainThread_id = UT_Thread::getMainThreadId();
-    std::cout << "automatte_open_init: " << mainThread_id << ": " << thread_id << "is main: " \
-    << UT_Thread::isMainThread() << "\n";
-}
+
 
 }// end of HA_HDK namespace
 
@@ -178,6 +207,5 @@ newVEXOp(void *)
         NULL,           // init function
         automatte_close,// cleanup function
         VEX_OPTIMIZE_2, // Optimization level
-        true);         
-    
+        true);  
 }

@@ -18,14 +18,17 @@ fog automatte_shader(export vector4 objectid = 0)
     // Store vex sample into RAM
     int handle = automatte_open("automatte", res, samples);
 
-    if (!handle)
-        printf("Can't open automatte storage");
+    if (!handle) {
 
-    float opacity = luminance(Of);
-    int   success = automatte_write(handle, set(nP.x, nP.y, Pz), obj_id, opacity);
+        printf("Can't open automatte storage\n");
+    } else {
+        float opacity = luminance(Of);
+        int   success = automatte_write(handle, set(nP.x, nP.y, Pz), obj_id, opacity);
 
-    if (!success)
-        printf("Can't save sample to automatte storage");
+        if (!success)
+            printf("Can't save sample to automatte storage");
+    }
+
 
     // export ndc coordintes to pixel filter.
     objectid   = set(nP.x, (float)obj_id, (float)mat_id, nP.y);

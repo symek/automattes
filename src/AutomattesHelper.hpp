@@ -30,7 +30,7 @@ typedef std::vector<Sample> SampleVector;
 class ImageInfo
 {
 public:
-    ImageInfo() : image_size(0), gridresx(0), gridresy(0) {}
+    ImageInfo() : image_size(0), gridresx(0), gridresy(0), initalized(0) {}
     bool update_size(const std::vector<int> & res, 
                      const std::vector<int> & samples) noexcept;
 
@@ -38,6 +38,7 @@ public:
     std::atomic<size_t> image_size;//?
     std::atomic<int>    gridresx;
     std::atomic<int>    gridresy;
+    std::atomic<int>    initalized;
 
     const size_t        image_margin = 3;
     const size_t        max_samples  = 1;
@@ -72,13 +73,20 @@ typedef std::queue<SampleBucket>                       BucketQueue;
 typedef tbb::concurrent_hash_map<int, BucketQueue>     VEX_Samples;
 typedef tbb::concurrent_hash_map<int32_t, VEX_Samples> AutomatteVexCache; 
 typedef tbb::concurrent_vector<Sample>                 AutomatteImage;
+typedef uint32_t shader_id_t;
 
 // VEX access:
+
+int allocate_vex_storage(const shader_id_t &, const int &, \
+    const std::vector<int> &, const std::vector<int> &);
+
 int create_vex_storage(const std::string &, const int &, 
                        const std::vector<int> &, 
                        const std::vector<int> &);
 
-int insert_vex_sample (const int32_t &, const int &, const UT_StackBuffer<float> &);
+void create_vex_storage2(shader_id_t & shader_id);
+
+int insert_vex_sample (const shader_id_t &, const uint32_t &, const UT_StackBuffer<float> &);
 void close_vex_storage();
 
 inline void compute_atm_image_size(const std::vector<int> & res, 

@@ -74,8 +74,7 @@ const Sample & SampleBucket::at(const int & index) const
 
 void SampleBucket::clear() noexcept
 { 
-
-    m_samples->clear(); 
+    m_samples->clear();
     myRegisteredFlag = 0;
 }
 
@@ -114,9 +113,10 @@ size_t SampleBucket::registerBucket()
 
         if(index < atm_image.size() && index > 0) {
             Sample & pixel = atm_image.at(index);
-            pixel = Sample(vexsample);
-            // for (uint i = 0; i < vexsample.size(); ++i)
-                // pixel.push_back(vexsample[i]);
+            // pixel = vexsample;
+            pixel.reserve(vexsample.size());
+            for (uint i = 0; i < vexsample.size(); ++i)
+                pixel.push_back(vexsample[i]);
         } else {
             // place empty sample here?
             DEBUG_PRINT("index not found: %i, sub_pix: (%i, %i), ndc: (%f, %f)\n", index, subpxi, subpyi, \
@@ -130,7 +130,9 @@ size_t SampleBucket::registerBucket()
         #endif
 
     }
-    clear();
+
+    // clear();
+
     #ifdef USE_DEEP_MAP
     writer.close();
     #endif
@@ -143,6 +145,7 @@ bool ImageInfo::update_size(const std::vector<int> & res,
 {
     // if ( res[0] != m_resolution[0] || res[1] != m_resolution[1] ||
         // samples[0] != m_samples[0] || samples[1] != m_samples[1] ) {
+        // std::lock_guard<std::mutex> guard(automattes_mutex);
         gridresx = res[0] * samples[0] + 2 * image_margin * samples[0];
         gridresy = res[1] * samples[1] + 2 * image_margin * samples[1];
         image_size = gridresx * gridresy * max_samples;
@@ -161,6 +164,65 @@ void close_vex_storage()
     #endif
 }
 
+void create_vex_storage2(shader_id_t & shader_id)
+{
+    AutomatteVexCache::accessor shader_writer;
+    UT_ASSERT(!atm_vex_cache.find(shader_writer, shader_id));
+    VEX_Samples vex_samples;
+    BucketQueue queue;
+    atm_vex_cache.insert(shader_writer, std::pair
+        <shader_id_t, VEX_Samples>(shader_id, vex_samples));
+    shader_id = static_cast<shader_id_t>(atm_vex_cache.size()-1);
+}
+
+
+int allocate_vex_storage(const shader_id_t & shader_id, const int & thread_id, \
+    const std::vector<int> & res, const std::vector<int> & samples)
+{
+    // We should excape from here as quick as possible.
+    {
+        AutomatteVexCache::const_accessor shader_reader;
+        atm_vex_cache.find(shader_reader, shader_id); 
+        const VEX_Samples & shader = shader_reader->second;
+        // we might move to vector instead of map and ommit find()
+        // Mantra seems to be executing this call 1 time for 50 pixels
+        // anyway. Fastest would be to have direct access to buckets
+        // Like storing pointer to bucket on VEX side. 
+        VEX_Samples::const_accessor bucket_queue_reader;
+
+        if(shader.find(bucket_queue_reader, thread_id)) {
+            return 1;
+        }
+        // shader_reader.release();
+    }
+
+    AutomatteVexCache::accessor shader_reader;
+    atm_vex_cache.find(shader_reader, shader_id); 
+    VEX_Samples & shader = shader_reader->second;
+    shader_reader.release();
+
+    VEX_Samples::accessor bucket_queue_writer;
+    SampleBucket bucket; bucket.copyInfo(res, samples);
+    BucketQueue queue; queue.push(bucket);
+    shader.insert(bucket_queue_writer, std::pair<uint32_t, BucketQueue>(thread_id, queue));
+
+
+    if (atm_image_info.initalized)
+        return 1;
+
+    {
+        std::lock_guard<std::mutex> guard(automattes_mutex);
+        atm_image_info.update_size(res, samples);
+
+        try {
+            atm_image.resize(atm_image_info.image_size);
+            return 1;
+        } catch (const std::exception ) {
+            return 0;
+        }
+    }
+}
+
 
 int create_vex_storage(const std::string & channel_name, const int & thread_id, \
     const std::vector<int> & res, const std::vector<int> & samples)
@@ -168,6 +230,10 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 
     // std::lock_guard<std::mutex> guard(automattes_mutex);
     const ut_thread_id_t currentMainThreadId = UT_Thread::getMainThreadId();
+    // if (atm_image_info.image_size != 0 && mainThreadId == currentMainThreadId )
+    //     return channel_hash_32;
+
+
     if (atm_image_info.image_size == 0) {
         atm_image_info.update_size(res, samples);
         mainThreadId = currentMainThreadId;
@@ -242,13 +308,13 @@ int create_vex_storage(const std::string & channel_name, const int & thread_id, 
 }
 
 
-int insert_vex_sample(const int32_t & handle, const int & thread_id, const UT_StackBuffer<float> & sample)
+int insert_vex_sample(const shader_id_t & handle, const uint32_t & thread_id, const UT_StackBuffer<float> & sample)
 {
     // std::lock_guard<std::mutex> guard(automattes_mutex);
-    AutomatteVexCache::const_accessor channel;
-    atm_vex_cache.find(channel, handle);
+    AutomatteVexCache::const_accessor shader;
+    atm_vex_cache.find(shader, handle); 
     VEX_Samples::accessor queue;
-    channel->second.find(queue, thread_id);
+    shader->second.find(queue, thread_id);
     SampleBucket & bucket = queue->second.front();
     const Sample vex{sample[0], sample[1], sample[2], 
         sample[3], sample[4], sample[5]};
