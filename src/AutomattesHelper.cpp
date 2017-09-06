@@ -131,12 +131,12 @@ size_t SampleBucket::registerBucket()
 
     }
 
-    // clear();
+    clear();
+    // myRegisteredFlag = 1;
 
     #ifdef USE_DEEP_MAP
     writer.close();
     #endif
-    myRegisteredFlag = 1;
     return atm_image.size();
 }
 
