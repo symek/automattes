@@ -3,6 +3,7 @@
 #include <iostream>
 #include <thread>
 #include <atomic>
+#include <memory>
 #include <algorithm>
 #include <time.h>
 #include <math.h>
@@ -25,11 +26,15 @@
 constexpr size_t SAMPLE_DEEP = 6;//should be at least 6
 constexpr size_t SAMPLE_SIZE = 6;
 constexpr size_t nsamples    = 10*10*SAMPLE_DEEP;
-constexpr size_t BUCKET_SIZE = 64*64*nsamples;
-constexpr size_t NTHREADS    = 32;
-constexpr size_t NBUCKETS    = (1920/64) * (1080/64) / NTHREADS; // avarage number of buckets per thread
-constexpr size_t _OVERFLOW   = .7f; // .5 means num samples == bucket size. .6 means 10% more samples, so buckets will have to reallocate.
-constexpr size_t HISTORY     = 4;
+constexpr size_t BUCKET_WIDTH= 64;
+constexpr size_t BUCKET_SIZE = BUCKET_WIDTH*BUCKET_WIDTH*nsamples;
+constexpr size_t BUCKET_MIN  = BUCKET_SIZE/2; // the ratio of SIZE we start randomly to grow buckets
+constexpr size_t _OVERFLOW   = 1.f; // How much to grow buckets from starting point (see above)
+constexpr size_t NTHREADS    = 16;
+constexpr size_t RESX        = 1920;
+constexpr size_t RESY        = 1080;
+constexpr size_t NBUCKETS    = (RESX/BUCKET_WIDTH) * (RESY/BUCKET_WIDTH) / NTHREADS; // avarage number of buckets per thread
+constexpr size_t HISTORY     = 8; // how many buckets we store per thread before prunning them out.
 
 
 
@@ -43,11 +48,11 @@ void allocate_std_sample_vector()
     std::queue<StdBucket> bucketQueue;
 
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
         StdBucket bucket;
-        bucket.reserve(BUCKET_SIZE);
+        bucket.reserve(BUCKET_MIN);
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             Sample sample;
             bucket.emplace_back(sample);
@@ -56,7 +61,7 @@ void allocate_std_sample_vector()
         if (bucketQueue.size() >= HISTORY) {
             bucketQueue.pop();
         } 
-        bucketQueue.push(bucket);
+        bucketQueue.push(std::move(bucket));
     }
 }
 
@@ -65,34 +70,51 @@ void allocate_std_sample_vector()
 typedef std::vector<float, tbb::scalable_allocator<float>> TBBAllocSample;
 void allocate_tbb_sample_vector()
 {
-    std::vector<TBBAllocSample> bucket;
+    //std::vector<TBBAllocSample> bucket;
+    std::queue<std::unique_ptr<std::vector<TBBAllocSample>>> bucketQueue;
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<std::vector<TBBAllocSample>> 
+            bucket(new std::vector<TBBAllocSample>());
+        bucket->reserve(BUCKET_MIN);
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             TBBAllocSample sample{0,1,2,3,4,5};
-            bucket.emplace_back(sample);
+            bucket->emplace_back(sample);
         }
-        bucket.clear();
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
     }
 }
 
 ///////////////////////////3//////////////////////////////////////
-
+typedef  std::vector<Sample, tbb::scalable_allocator<Sample>> 
+BucketVectorTBBAllocSampleVector;
 void allocate_tbb_bucket_vector()
 {
     // std::vector<>
-    std::vector<Sample, tbb::scalable_allocator<Sample>> bucket;
+    std::queue<std::unique_ptr<BucketVectorTBBAllocSampleVector>> bucketQueue;
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<BucketVectorTBBAllocSampleVector> 
+            bucket(new BucketVectorTBBAllocSampleVector());
+        bucket->reserve(BUCKET_MIN);
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
-            Sample sample; //{0,1,2,3,4,5};
-            bucket.emplace_back(sample);
+            Sample sample;
+            bucket->emplace_back(sample);
         }
-        bucket.clear();
+
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
     }
 }
 
@@ -100,23 +122,29 @@ void allocate_tbb_bucket_vector()
 
 typedef tbb::memory_pool_allocator<float> sample_vector_allocator_t;
 typedef std::vector<float, sample_vector_allocator_t> MemPoolSample;
+typedef std::vector<MemPoolSample> BucketVectorTBBPoolSampleVector;
 static  tbb::memory_pool<tbb::scalable_allocator<MemPoolSample>> 
 sample_vector_memory_pool;
 
 void allocate_tbb_sample_vector_pool()
 {
-    // MemPoolSample * sample = nullptr; 
-    std::vector<MemPoolSample> bucket;
-
+    std::queue<std::unique_ptr<BucketVectorTBBPoolSampleVector>> bucketQueue;
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN+ ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<BucketVectorTBBPoolSampleVector>  bucket(new BucketVectorTBBPoolSampleVector());
+        bucket->reserve(BUCKET_MIN);
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             MemPoolSample sample(6, 0, sample_vector_allocator_t(sample_vector_memory_pool));
-            bucket.emplace_back(sample);
+            bucket->emplace_back(sample);
         }
-        bucket.clear();
+
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
     }
 }
 
@@ -125,42 +153,56 @@ void allocate_tbb_sample_vector_pool()
 
 struct Bucket {
 public:
-    Bucket() { m_samples = new float[BUCKET_SIZE*SAMPLE_SIZE](); }
+    Bucket() { 
+        m_samples = new float[m_size]();
+    }
+    ~Bucket() { deallocate(); }
     void emplace_back(const float * sample) {
         if (pointer < m_size) {
             std::memcpy(&m_samples[pointer], sample, sizeof(Sample));
             pointer+=SAMPLE_SIZE;
+
         } else {
-            float * tmp = new float[2*BUCKET_SIZE*SAMPLE_SIZE]();
-            std::memcpy(tmp, m_samples, sizeof(float)*m_size);
+            const size_t old_size = m_size;
+            m_size = old_size + BUCKET_MIN*SAMPLE_SIZE;
+            float * tmp = new float[m_size]();
+            std::memcpy(tmp, m_samples, sizeof(float)*old_size);
             delete[] m_samples;
             m_samples = tmp;
-            m_size = BUCKET_SIZE*SAMPLE_SIZE*2;
             emplace_back(sample); } } 
     void clear()      { pointer = 0; }
-    void deallocate() { clear(); m_size = 0; delete[] m_samples; }
+    void deallocate() { 
+        clear(); 
+        m_size = 0; 
+        if (m_samples != nullptr)
+            delete[] m_samples;
+        m_samples = nullptr; 
+    }
 private:
-    float  * m_samples;
+    float  * m_samples = nullptr;
     size_t pointer = 0;
-    size_t m_size  = 0;
+    size_t m_size  =  BUCKET_MIN*SAMPLE_SIZE;
 };
 
 void allocate_struct_bucket_pool_CppNewDelete()
 {
-    Bucket bucket;
-
+    
+    std::queue<std::unique_ptr<Bucket>> bucketQueue;
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<Bucket> bucket(new Bucket());
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             const float sample[6] = {0,1,2,3,4,5};
-            bucket.emplace_back((float*)sample);
+            bucket->emplace_back((float*)sample);
         }
-        bucket.clear();
-        // bucket_memory_pool.free(bucket.m_samples);
+
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+        bucketQueue.push(std::move(bucket));
     }
-    bucket.deallocate();
 }
 
 ///////////////////////////////6//////////////////////////////////
@@ -171,22 +213,32 @@ tbb_bucket_mem_pool;
 struct TBB_Bucket {
 public:
     TBB_Bucket() { 
-        m_samples = (float*) tbb_bucket_mem_pool.malloc(sizeof(float)*BUCKET_SIZE*SAMPLE_SIZE);
-        m_size    = BUCKET_SIZE*SAMPLE_SIZE; }
+        m_size    = BUCKET_MIN*SAMPLE_SIZE;
+        m_samples = (float*) tbb_bucket_mem_pool.malloc(sizeof(float)*m_size);
+    }
+    ~TBB_Bucket() { deallocate(); }
     inline void emplace_back(const float * sample) noexcept {
         if (pointer < m_size) {
             std::memcpy(&m_samples[pointer], sample, sizeof(float)*SAMPLE_SIZE);
             pointer+=SAMPLE_SIZE;
         } else {
-            float * tmp = (float*) tbb_bucket_mem_pool.malloc(2*sizeof(float)*BUCKET_SIZE*SAMPLE_SIZE);
-            std::memcpy(tmp, m_samples, sizeof(float)*m_size);
+            const float old_size = m_size;
+            m_size = old_size + BUCKET_MIN*SAMPLE_SIZE;
+            float * tmp = (float*) tbb_bucket_mem_pool.malloc(2*sizeof(float)*m_size);
+            std::memcpy(tmp, m_samples, sizeof(float)*old_size);
             tbb_bucket_mem_pool.free(m_samples);
             m_samples = tmp;
-            m_size = BUCKET_SIZE*SAMPLE_SIZE*2;
             emplace_back(sample); } }
 
     void clear()      { pointer = 0; }
-    void deallocate() { clear(); m_size = 0; tbb_bucket_mem_pool.free(m_samples); }
+    void deallocate() { 
+        clear(); 
+        if (m_samples != nullptr)
+            tbb_bucket_mem_pool.free(m_samples);
+        m_size = 0;
+        m_samples = nullptr;
+    }
+
 private:
     float  * m_samples;
     size_t pointer = 0;
@@ -195,20 +247,23 @@ private:
 
 void allocate_struct_bucket_pool_TbbMallocFree()
 {
-    TBB_Bucket bucket;
-
+    std::queue<std::unique_ptr<TBB_Bucket>> bucketQueue;
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<TBB_Bucket> bucket(new TBB_Bucket());
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             const float sample[6] = {0,1,2,3,4,5};
-            bucket.emplace_back(sample);
+            bucket->emplace_back(sample);
         }
-        bucket.clear();
-    }
 
-    bucket.deallocate();
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
+    }
 }
 
 
@@ -221,6 +276,7 @@ public:
         m_samples.push_back(slice);
         m_capacity = m_slice_size;
     }
+    ~TBB_Bucket_Sliced() { deallocate(); }
 
     inline void emplace_back(const float * sample) noexcept {
         if (m_current_item < m_capacity) {
@@ -242,32 +298,40 @@ public:
     void deallocate() { 
         clear(); m_capacity = 0;
         std::vector<float*>::iterator it = m_samples.begin();
-        for (; it!=m_samples.end(); ++it)  
+        for (; it!=m_samples.end(); ++it)  {
             tbb_bucket_mem_pool.free(*it); 
+        }
+        m_samples.clear();
     }
 private:
     std::vector<float*> m_samples;
     size_t m_current_item = 0;
-    size_t m_slice_size   = BUCKET_SIZE*SAMPLE_SIZE;
+    size_t m_slice_size   = BUCKET_MIN*SAMPLE_SIZE;
     size_t m_capacity     = 0;
 };
 
+
 void allocate_struct_bucket_pool_TbbMallocFree_Slices()
 {
-    TBB_Bucket_Sliced bucket;
+
+    std::queue<std::unique_ptr<TBB_Bucket_Sliced>> bucketQueue;
 
     float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-    uint rnd_BUCKET_SIZE = BUCKET_SIZE/2 + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
   
     for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<TBB_Bucket_Sliced> bucket(new TBB_Bucket_Sliced());
         for(size_t p=0; p < rnd_BUCKET_SIZE; ++p) {
             const float sample[6] = {0,1,2,3,4,5};
-            bucket.emplace_back(sample);
+            bucket->emplace_back(sample);
         }
-        bucket.clear();
-    }
 
-    bucket.deallocate();
+        if (bucketQueue.size() >= HISTORY) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
+    }
 }
 
 /////////////////////////////////////////////////////////////////
@@ -296,8 +360,8 @@ void benchmark_runner()
 
 /////////////////////////////////////////////////////////////////
 
-#define SINGLE_TEST
-#define TESTS 1
+// #define SINGLE_TEST
+#define TESTS 7
 #ifdef SINGLE_TEST
 #define SIGN ==
 #else
@@ -312,44 +376,44 @@ int main()
 
      #if TESTS SIGN 1
     // std::vector<float[6]>
-    printf("std::vector<Sample> // Sample -> Struct {float[6]}  : %.1fms\n", 
-        microbench(&benchmark_runner<allocate_std_sample_vector>, 1, repetition));
+    printf("std::vector<Sample> // Sample -> Struct {float[6]}  : %.1fms (buckets in queue: %i ) \n", 
+        microbench(&benchmark_runner<allocate_std_sample_vector>, 1, repetition), HISTORY);
     #endif
 
-    #if TESTS SIGN 2
+    #if  TESTS SIGN 2
     // std::vector<std::vector<float, tbb::scalable_alloc>>
-    printf("std::vector<std::vector<float, tbb::scalable_alloc>>: %.1fms\n", 
-        microbench(&benchmark_runner<allocate_tbb_sample_vector>, 1, repetition));
+    printf("std::vector<std::vector<float, tbb::scalable_alloc>>: %.1fms (buckets in queue: %i )\n", 
+        microbench(&benchmark_runner<allocate_tbb_sample_vector>, 1, repetition), HISTORY);
     #endif
 
     #if TESTS SIGN 3
     // std::vector<Sample, std::vector<tbb::scalable_allocator>>
-    printf("std::vector<Sample,std::vector<tbb::scalable_alloc>>: %.1fms\n", 
-        microbench(&benchmark_runner<allocate_tbb_bucket_vector>, 1, repetition));
+    printf("std::vector<Sample,std::vector<tbb::scalable_alloc>>: %.1fms (buckets in queue: %i ) \n", 
+        microbench(&benchmark_runner<allocate_tbb_bucket_vector>, 1, repetition), HISTORY);
     #endif
 
     #if TESTS SIGN 4
     // std::vector<Sample, bucket_allocation >
-    printf("std::vector<std::vector<float,tbb:memory_pool_alloc>: %.1fms\n", 
-        microbench(&benchmark_runner<allocate_tbb_sample_vector_pool>, 1, repetition));
+    printf("std::vector<std::vector<float,tbb:memory_pool_alloc>: %.1fms (buckets in queue: %i ) \n", 
+        microbench(&benchmark_runner<allocate_tbb_sample_vector_pool>, 1, repetition), HISTORY);
     #endif
 
     #if TESTS SIGN 5
      // Bucket <Sample, new/delete >
-    printf("Struct Bucket[float[6]] -> new[all samples]/delete> : %.1fms\n",
-        microbench(&benchmark_runner<allocate_struct_bucket_pool_CppNewDelete>, 1, repetition));
+    printf("Struct Bucket[float[6]] -> new[all samples]/delete> : %.1fms (buckets in queue: %i ) \n",
+        microbench(&benchmark_runner<allocate_struct_bucket_pool_CppNewDelete>, 1, repetition), HISTORY);
     #endif 
 
     #if TESTS SIGN 6
      // Bucket <Sample, tbb:mempool >
-    printf("Struct TBB_Bucket[float[6]], tbb:malloc/tbb::free > : %.1fms\n",
-        microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree>, 1, repetition));
+    printf("Struct TBB_Bucket[float[6]], tbb:malloc/tbb::free > : %.1fms (buckets in queue: %i ) \n",
+        microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree>, 1, repetition), HISTORY);
     #endif
 
     #if TESTS SIGN 7
     // Bucket <Sample, tbb:mempool >
-    printf("Struct TBB_Bucket_Sliced[float[6]], tbb:malloc...>  : %.1fms\n",
-        microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree_Slices>, 1, repetition));
+    printf("Struct TBB_Bucket_Sliced[float[6]], tbb:malloc...>  : %.1fms (buckets in queue: %i ) \n",
+        microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree_Slices>, 1, repetition), HISTORY);
     #endif
 
 
