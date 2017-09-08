@@ -282,8 +282,9 @@ public:
         if (m_current_item < m_capacity) {
             const uint slice_pointer = (const uint) \
             std::ceil(m_current_item / m_slice_size);
+            const uint _item = m_current_item % m_slice_size;
             float * buffer = m_samples.at(slice_pointer);
-            std::memcpy(buffer, sample, sizeof(float)*SAMPLE_SIZE);
+            std::memcpy(&buffer[_item], sample, sizeof(float)*SAMPLE_SIZE);
         } else {
             float * _slice = (float*) tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
             std::memcpy(_slice, sample, sizeof(float)*SAMPLE_SIZE);
@@ -333,6 +334,7 @@ void allocate_struct_bucket_pool_TbbMallocFree_Slices()
         bucketQueue.push(std::move(bucket));
     }
 }
+
 
 /////////////////////////////////////////////////////////////////
 //                      END OF BENCHMARK FUNCS                 //
