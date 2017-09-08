@@ -417,6 +417,104 @@ void allocate_bucket_Std_Slices_TBBCacheAligned()
     }
 }
 
+
+///////////////////////////////11//////////////////////////////////
+
+inline void simd_copy(const void * source, const size_t size, float * dest) 
+{
+    __m256 * varray = (__m256 *) array;
+    const size_t simd_size = sizeof(__m256);
+    for (size_t i = 0; i < size / simd_size; i+=simd_size) {
+        _mm256_stores_ps(dest, varray);
+    }
+}
+
+struct BucketSliced_TBBMalloc_SIMD {
+public:
+    BucketSliced_TBBMalloc_SIMD() { 
+        float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
+        m_samples.emplace_back(slice);
+        m_capacity = m_slice_size;
+    }
+    ~BucketSliced_TBBMalloc_SIMD() { deallocate(); }
+
+    inline void emplace_back(const float * sample) noexcept {
+        if (m_current_item < m_capacity) {
+            const uint slice_pointer = (const uint) \
+            std::ceil(m_current_item / m_slice_size);
+            const uint _item = m_current_item % m_slice_size;
+            float * slice = m_samples.at(slice_pointer);
+            std::memcpy(&slice[_item], sample, sizeof(float)*SAMPLE_SIZE);
+        } else {
+            float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
+            std::memcpy(slice, sample, sizeof(float)*SAMPLE_SIZE);
+            m_samples.emplace_back(slice);
+            m_capacity *= 2;
+        }
+        m_current_item += SAMPLE_SIZE;
+    }
+
+    inline void emplace_back_samples(const float * samples) noexcept {
+        if (m_current_item < m_capacity) {
+            const uint slice_pointer = (const uint) \
+            std::ceil(m_current_item / m_slice_size);
+            const uint _item = m_current_item % m_slice_size;
+            const size_t i = SAMPLE_SIZE;
+            float * slice = m_samples[slice_pointer];
+            std::memcpy(&slice[_item], samples, sizeof(float)*SAMPLE_SIZE*m_simd_size);
+        } else {
+            const size_t i = SAMPLE_SIZE;
+            float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
+            std::memcpy(slice, samples, sizeof(float)*SAMPLE_SIZE*m_simd_size);
+            m_samples.emplace_back(slice);
+            m_capacity *= 2;
+        }
+        m_current_item += SAMPLE_SIZE*4;
+    }
+
+    void clear()      {m_current_item = 0; }
+    void deallocate() { 
+        clear(); 
+        m_capacity = 0;
+        std::vector<float*>::iterator it = m_samples.begin();
+        for (; it!=m_samples.end(); ++it)  {
+            tbb_bucket_mem_pool.free(*it); 
+        }
+        m_samples.clear();
+    }
+private:
+    const size_t m_simd_size = 4;
+    std::vector<float*>     m_samples;
+    size_t m_current_item = 0;
+    size_t m_slice_size   = BUCKET_MIN*SAMPLE_SIZE;
+    size_t m_capacity     = 0;
+};
+
+
+void allocate_bucketSliced_TBBMalloc_SIMD()
+{
+    std::queue<std::unique_ptr<BucketSliced_TBBMalloc_SIMD>> bucketQueue;
+    float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+    uint rnd_BUCKET_SIZE = BUCKET_MIN + ceil(BUCKET_SIZE * r *_OVERFLOW);
+    for(size_t i =0; i < NBUCKETS; ++i) {
+        std::unique_ptr<BucketSliced_TBBMalloc_SIMD> bucket(new BucketSliced_TBBMalloc_SIMD());
+        for(size_t p=0; p < rnd_BUCKET_SIZE; p+=4) {
+            const float sample[6*4] = \
+            {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,
+                16,17,18,19,20,21,22,23};
+            bucket->emplace_back_samples(sample);
+        }
+
+        if (bucketQueue.size() >= QUEUE_SIZE) {
+            bucketQueue.pop();
+        } 
+
+        bucketQueue.push(std::move(bucket));
+    }
+}
+
+
+
 /////////////////////////////////////////////////////////////////
 //                      END OF BENCHMARK FUNCS                 //
 /////////////////////////////////////////////////////////////////
@@ -452,7 +550,7 @@ void benchmark_runner()
 /////////////////////////////////////////////////////////////////
 
 // #define SINGLE_TEST
-#define TESTS 10
+#define TESTS 11
 #ifdef SINGLE_TEST
 #define SIGN ==
 #else
@@ -522,6 +620,12 @@ int main()
     // Bucket <Sample, tbb:mempool >
     printf("Struct BucketSliced_StdVec[vec<Sample>,tbb::cache.]>: %.1fms (buckets in queue: %i ) \n",
         microbench(&benchmark_runner<allocate_bucket_Std_Slices_TBBCacheAligned>, 1, REPETITION), QUEUE_SIZE);
+    #endif
+
+     #if TESTS SIGN 11
+    // Bucket <Sample, tbb:mempool >
+    printf("Struct BucketSliced_TBBMalloc_SIMD[float*,tbb:mallo>: %.1fms (buckets in queue: %i ) \n",
+        microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc_SIMD>, 1, REPETITION), QUEUE_SIZE);
     #endif
 
     return 0;
