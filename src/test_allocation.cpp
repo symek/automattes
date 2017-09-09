@@ -10,6 +10,7 @@
 #include <math.h>
 #include <cstdio>
 #include <cstring>
+#include <x86intrin.h>
 #include "../../microbench/microbench.h"
 #include "bench_utils.h"
 
@@ -32,16 +33,16 @@ constexpr size_t BUCKET_WIDTH= 64;
 constexpr size_t BUCKET_SIZE = BUCKET_WIDTH*BUCKET_WIDTH*nsamples;
 constexpr size_t BUCKET_MIN  = BUCKET_SIZE/2; // the ratio of SIZE we start randomly to grow buckets
 constexpr size_t _OVERFLOW   = 1.f; // How much to grow buckets from starting point (see above)
-constexpr size_t NTHREADS    = 32;
+constexpr size_t NTHREADS    = 8;
 constexpr size_t RESX        = 2048;
 constexpr size_t RESY        = 1556;
 constexpr size_t NBUCKETS    = (RESX/BUCKET_WIDTH) * (RESY/BUCKET_WIDTH) / NTHREADS; // avarage number of buckets per thread
 constexpr size_t QUEUE_SIZE  = 2; // how many buckets we store per thread before prunning them out.
 constexpr size_t COOL_ALLOC  = 5 * 1000; // we need this to let allocator do deallocation.
-constexpr size_t REPETITION  = 5;
+constexpr size_t REPETITION  = 1;
 
 
-
+using namespace BENCHMARK;
 
 /////////////////////////1/////////////////////////////
 
@@ -420,14 +421,6 @@ void allocate_bucket_Std_Slices_TBBCacheAligned()
 
 ///////////////////////////////11//////////////////////////////////
 
-inline void simd_copy(const void * source, const size_t size, float * dest) 
-{
-    __m256 * varray = (__m256 *) array;
-    const size_t simd_size = sizeof(__m256);
-    for (size_t i = 0; i < size / simd_size; i+=simd_size) {
-        _mm256_stores_ps(dest, varray);
-    }
-}
 
 struct BucketSliced_TBBMalloc_SIMD {
 public:
@@ -513,6 +506,55 @@ void allocate_bucketSliced_TBBMalloc_SIMD()
     }
 }
 
+///////////////////////////////12//////////////////////////////////
+
+inline void simd_copy(const float * source, const size_t size, const size_t stride, float * dest) 
+{
+    const size_t simd_size = sizeof(__m256);
+    for (size_t i = 0; i < size; i+=simd_size*4) {
+        __m256 * varray = (__m256 *) &source[i];
+        _mm256_storeu_ps(&dest[i], *varray);
+    }
+}
+
+
+inline void std_copy(const float * source, const size_t size,  const size_t stride, float * dest)
+{
+    const size_t step = SAMPLE_SIZE*stride;
+    for (size_t i = 0; i < size; i+=step) {
+        std::memcpy(&dest[i], source, sizeof(float)*step);
+    }
+}
+
+template < size_t simd, void (*CopyFunction) 
+    (const float * source, 
+     const size_t size, 
+     const size_t stride, 
+     float * dest) >
+
+void copy_RawArray()
+{
+    const size_t stride = simd * SAMPLE_SIZE;
+    const size_t tail   = BUCKET_SIZE % stride;
+    size_t   array_size = 0;
+    if (!tail) {
+        array_size = BUCKET_SIZE;
+    } else {
+        array_size = BUCKET_SIZE + (stride - tail); 
+    }
+    float * bucket = new float[array_size];
+    for(size_t b = 0; b < NBUCKETS; ++b) {
+        for(size_t p = 0; p < array_size; p+=stride) {
+            float sample[stride]; // stride is knows at compile time...
+            for (size_t s=0; s<stride; ++s) {
+                sample[s] = s*1.f*xorshf96();// rand() is terrible slow at multithread...;
+            } 
+            CopyFunction((const float*) sample, stride, simd, (float*) bucket);
+        }
+    }
+    delete[] bucket;
+}
+
 
 
 /////////////////////////////////////////////////////////////////
@@ -543,14 +585,12 @@ void benchmark_runner()
     times++;
     if (times == REPETITION)
         printf("Max Memory: %iMB, ", memory);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
 }
 
 /////////////////////////////////////////////////////////////////
 
 // #define SINGLE_TEST
-#define TESTS 11
+#define TESTS 13
 #ifdef SINGLE_TEST
 #define SIGN ==
 #else
@@ -562,71 +602,104 @@ using namespace moodycamel;
 int main()
 {
 
-     #if TESTS SIGN 1
-    // std::vector<float[6]>
-    printf("std::vector<Sample> // Sample -> Struct {float[6]}  : %.1fms (buckets in queue: %i ) \n", 
-        microbench(&benchmark_runner<allocate_std_sample_vector>, 1, REPETITION), QUEUE_SIZE);
+    //  #if TESTS SIGN 1
+    // // std::vector<float[6]>
+    // printf("std::vector<Sample> // Sample -> Struct {float[6]}  : %.1fms (buckets in queue: %i ) \n", 
+    //     microbench(&benchmark_runner<allocate_std_sample_vector>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // #if  TESTS SIGN 2
+    // // std::vector<std::vector<float, tbb::scalable_alloc>>
+    // printf("std::vector<std::vector<float, tbb::scalable_alloc>>: %.1fms (buckets in queue: %i )\n", 
+    //     microbench(&benchmark_runner<allocate_tbb_sample_vector>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // #if TESTS SIGN 3
+    // // std::vector<Sample, std::vector<tbb::scalable_allocator>>
+    // printf("std::vector<Sample,std::vector<tbb::scalable_alloc>>: %.1fms (buckets in queue: %i ) \n", 
+    //     microbench(&benchmark_runner<allocate_tbb_bucket_vector>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // #if TESTS SIGN 4
+    // // std::vector<Sample, bucket_allocation >
+    // printf("std::vector<std::vector<float,tbb:memory_pool_alloc>: %.1fms (buckets in queue: %i ) \n", 
+    //     microbench(&benchmark_runner<allocate_tbb_sample_vector_pool>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // #if TESTS SIGN 5
+    //  // Bucket <Sample, new/delete >
+    // printf("Struct BucketRawArray[float[6]] -> new/delete>      : %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_BuckeRawArray>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif 
+
+    // #if TESTS SIGN 6
+    //  // Bucket <Sample, tbb:mempool >
+    // printf("Struct TBB_Bucket[float[6]], tbb:malloc/tbb::free > : %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // #if TESTS SIGN 7
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_TBBMalloc[float[6]],tbb:mallo>  : %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    //  #if TESTS SIGN 8
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_StdVec[vec<Sample>,std::alloc.]>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucket_Slices_Std>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    //  #if TESTS SIGN 9
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_StdVec[vec<Sample>,tbb::scal..]>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucket_Std_Slices_TBBScalabe>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    //  #if TESTS SIGN 10
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_StdVec[vec<Sample>,tbb::cache.]>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucket_Std_Slices_TBBCacheAligned>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    //  #if TESTS SIGN 11
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_TBBMalloc_SIMD[float*,tbb:mallo>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc_SIMD>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
+
+    // Copy tests:
+    #if TESTS SIGN 12
+    // std::memcpy
+    printf(" sample float[] -> bucket float[] std::memcpy,     >: %.1fms(stride:(x*Sample): %i ) \n",
+        microbench(&benchmark_runner<copy_RawArray<1, std_copy>>, 1, REPETITION), 1);
+
+    printf(" sample float[] -> bucket float[] std::memcpy,     >: %.1fms(stride:(x*Sample): %i ) \n",
+        microbench(&benchmark_runner<copy_RawArray<4, std_copy>>, 1, REPETITION), 4);
+    std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
     #endif
 
-    #if  TESTS SIGN 2
-    // std::vector<std::vector<float, tbb::scalable_alloc>>
-    printf("std::vector<std::vector<float, tbb::scalable_alloc>>: %.1fms (buckets in queue: %i )\n", 
-        microbench(&benchmark_runner<allocate_tbb_sample_vector>, 1, REPETITION), QUEUE_SIZE);
+    #if TESTS SIGN 13
+    // std::memcpy
+    // printf(" sample float[] -> bucket float[] std::memcpy,     >: %.1fms(stride:(x*Sample): %i ) \n",
+    //     microbench(&benchmark_runner<copy_RawArray<1, simd_copy>>, 1, REPETITION), 1);
+
+    printf(" sample float[] -> bucket float[] std::memcpy,     >: %.1fms(stride:(x*Sample): %i ) \n",
+        microbench(&benchmark_runner<copy_RawArray<4, simd_copy>>, 1, REPETITION), 4);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
     #endif
 
-    #if TESTS SIGN 3
-    // std::vector<Sample, std::vector<tbb::scalable_allocator>>
-    printf("std::vector<Sample,std::vector<tbb::scalable_alloc>>: %.1fms (buckets in queue: %i ) \n", 
-        microbench(&benchmark_runner<allocate_tbb_bucket_vector>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-    #if TESTS SIGN 4
-    // std::vector<Sample, bucket_allocation >
-    printf("std::vector<std::vector<float,tbb:memory_pool_alloc>: %.1fms (buckets in queue: %i ) \n", 
-        microbench(&benchmark_runner<allocate_tbb_sample_vector_pool>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-    #if TESTS SIGN 5
-     // Bucket <Sample, new/delete >
-    printf("Struct BucketRawArray[float[6]] -> new/delete>      : %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_BuckeRawArray>, 1, REPETITION), QUEUE_SIZE);
-    #endif 
-
-    #if TESTS SIGN 6
-     // Bucket <Sample, tbb:mempool >
-    printf("Struct TBB_Bucket[float[6]], tbb:malloc/tbb::free > : %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_struct_bucket_pool_TbbMallocFree>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-    #if TESTS SIGN 7
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_TBBMalloc[float[6]],tbb:mallo>  : %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-     #if TESTS SIGN 8
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_StdVec[vec<Sample>,std::alloc.]>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucket_Slices_Std>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-     #if TESTS SIGN 9
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_StdVec[vec<Sample>,tbb::scal..]>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucket_Std_Slices_TBBScalabe>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-     #if TESTS SIGN 10
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_StdVec[vec<Sample>,tbb::cache.]>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucket_Std_Slices_TBBCacheAligned>, 1, REPETITION), QUEUE_SIZE);
-    #endif
-
-     #if TESTS SIGN 11
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_TBBMalloc_SIMD[float*,tbb:mallo>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc_SIMD>, 1, REPETITION), QUEUE_SIZE);
-    #endif
 
     return 0;
 

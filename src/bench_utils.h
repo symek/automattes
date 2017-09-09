@@ -10,6 +10,8 @@
 #define DEBUG_PRINT(fmt, ...) do {} while (0)
 #endif
 
+namespace BENCHMARK
+{
 
 int parseLine(char* line){
     // This assumes that a digit will be found and the line ends in " Kb".
@@ -50,3 +52,23 @@ int getPhysicalMem(){ //Note: this value is in KB!
     fclose(file);
     return result / 1024;
 }
+
+
+static unsigned long x_seed=123456789, y_seed=362436069, z_seed=521288629;
+
+inline unsigned long xorshf96(void) 
+{   //period 2^96-1
+    unsigned long t;
+    x_seed ^= x_seed << 16;
+    x_seed ^= x_seed >> 5;
+    x_seed ^= x_seed << 1;
+
+   t = x_seed;
+   x_seed = y_seed;
+   y_seed = z_seed;
+   z_seed = t ^ x_seed ^ y_seed;
+
+  return z_seed;
+}
+
+} // end of BENCHMARK namespace
