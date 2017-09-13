@@ -11,18 +11,18 @@
 #endif
 
 
-constexpr size_t SAMPLE_DEEP = 6;//should be at least 6
-constexpr size_t SAMPLE_SIZE = 6;
+constexpr size_t SAMPLE_DEEP = 3;//should be at least 6
+constexpr size_t SAMPLE_SIZE = 4;
 constexpr size_t nsamples    = 10*10*SAMPLE_DEEP;
 constexpr size_t BUCKET_WIDTH= 64;
 constexpr size_t BUCKET_SIZE = BUCKET_WIDTH*BUCKET_WIDTH*nsamples;
-constexpr size_t BUCKET_MIN  = BUCKET_SIZE/2; // the ratio of SIZE we start randomly to grow buckets
-constexpr size_t _OVERFLOW   = 1.f; // How much to grow buckets from starting point (see above)
-constexpr size_t NTHREADS    = 8;
+constexpr size_t BUCKET_MIN  = BUCKET_SIZE; // the ratio of SIZE we start randomly to grow buckets
+constexpr size_t _OVERFLOW   = 2.f; // How much to grow buckets from starting point (see above)
+constexpr size_t NTHREADS    = 32;
 constexpr size_t RESX        = 2048;
 constexpr size_t RESY        = 1556;
 constexpr size_t NBUCKETS    = (RESX/BUCKET_WIDTH) * (RESY/BUCKET_WIDTH) / NTHREADS; // avarage number of buckets per thread
-constexpr size_t QUEUE_SIZE  = 2; // how many buckets we store per thread before prunning them out.
+constexpr size_t QUEUE_SIZE  = 6; // how many buckets we store per thread before prunning them out.
 constexpr size_t COOL_ALLOC  = 5 * 1000; // we need this to let allocator do deallocation.
 constexpr size_t REPETITION  = 5;
 
@@ -89,6 +89,17 @@ inline unsigned long xorshf96(void)
 
 namespace SIMD
 {
+
+    inline void *align( std::size_t alignment, std::size_t size,
+                        void *&ptr, std::size_t &space ) {
+        std::uintptr_t pn = reinterpret_cast< std::uintptr_t >( ptr );
+        std::uintptr_t aligned = ( pn + alignment - 1 ) & - alignment;
+        std::size_t padding = aligned - pn;
+        if ( space < size + padding ) return nullptr;
+        space -= padding;
+        return ptr = reinterpret_cast< void * >( aligned );
+    }
+
     inline void std_copy(const float * source, const size_t size,  const size_t stride, float * dest)
     {
         const size_t step = SAMPLE_SIZE*stride;
@@ -104,8 +115,8 @@ namespace SIMD
         _mm256_store_ps(dest, *varray);
                  varray = (__m256 *) &source[8];
         _mm256_store_ps(&dest[8], *varray);
-                 varray = (__m256 *) &source[16];
-        _mm256_store_ps(&dest[16], *varray);
+                 // varray = (__m256 *) &source[16];
+        // _mm256_store_ps(&dest[16], *varray);
         #else
             #if defined (__SSE2__) || defined(__SSE3__) || defined(__SSE4__) 
                 __m128 * varray = (__m128 *) source;
@@ -116,10 +127,10 @@ namespace SIMD
                 _mm_store_ps(&dest[8], *varray);
                          varray = (__m128 *) &source[12];
                 _mm_store_ps(&dest[12], *varray);
-                         varray = (__m128 *) &source[16];
-                _mm_store_ps(&dest[16], *varray);
-                         varray = (__m128 *) &source[20];
-                _mm_store_ps(&dest[20], *varray);
+                         // varray = (__m128 *) &source[16];
+                // _mm_store_ps(&dest[16], *varray);
+                         // varray = (__m128 *) &source[20];
+                // _mm_store_ps(&dest[20], *varray);
             #else
                 const size_t step = SAMPLE_SIZE*stride;
                 std::memcpy(dest, source, sizeof(float)*step);
@@ -134,8 +145,8 @@ namespace SIMD
         _mm256_stream_ps(dest, *varray);
                  varray = (__m256 *) &source[8];
         _mm256_stream_ps(&dest[8], *varray);
-                 varray = (__m256 *) &source[16];
-        _mm256_stream_ps(&dest[16], *varray);
+                 // varray = (__m256 *) &source[16];
+        // _mm256_stream_ps(&dest[16], *varray);
         #else
             #if defined (__SSE2__) || defined(__SSE3__) || defined(__SSE4__) 
                 __m128 * varray = (__m128 *) source;
@@ -146,10 +157,10 @@ namespace SIMD
                 _mm_stream_ps(&dest[8], *varray);
                          varray = (__m128 *) &source[12];
                 _mm_stream_ps(&dest[12], *varray);
-                         varray = (__m128 *) &source[16];
-                _mm_stream_ps(&dest[16], *varray);
-                         varray = (__m128 *) &source[20];
-                _mm_stream_ps(&dest[20], *varray);
+                         // varray = (__m128 *) &source[16];
+                // _mm_stream_ps(&dest[16], *varray);
+                         // varray = (__m128 *) &source[20];
+                // _mm_stream_ps(&dest[20], *varray);
             #else
                 const size_t step = SAMPLE_SIZE*stride;
                 std::memcpy(dest, source, sizeof(float)*step);
