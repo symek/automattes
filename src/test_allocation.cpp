@@ -409,7 +409,7 @@ void allocate_bucket_Std_Slices_TBBCacheAligned()
 struct BucketSliced_TBBMalloc_SIMD {
 public:
     BucketSliced_TBBMalloc_SIMD() { 
-        float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
+        float * slice = (float*)tbb_bucket_mem_pool.malloc(m_slice_size);
         m_samples.emplace_back(slice);
         m_capacity = m_slice_size;
     }
@@ -423,7 +423,7 @@ public:
             float * slice = m_samples.at(slice_pointer);
             std::memcpy(&slice[_item], sample, sizeof(float)*SAMPLE_SIZE);
         } else {
-            float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
+            float * slice = (float*)tbb_bucket_mem_pool.malloc(m_slice_size);
             std::memcpy(slice, sample, sizeof(float)*SAMPLE_SIZE);
             m_samples.emplace_back(slice);
             m_capacity *= 2;
@@ -438,11 +438,11 @@ public:
             const uint _item = m_current_item % m_slice_size;
             const size_t i = SAMPLE_SIZE;
             float * slice = m_samples[slice_pointer];
-            SIMD::simd_copy_stream((const float *)samples, /*4*samples*/ SAMPLE_SIZE*4, 4, &slice[_item]);
+            SIMD::simd_copy_stream16((const float *)samples, &slice[_item]);
         } else {
             const size_t i = SAMPLE_SIZE;
             float * slice = (float*)tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
-            SIMD::simd_copy_stream((const float *)samples, /*4*samples*/ SAMPLE_SIZE*4, 4, slice);
+            SIMD::simd_copy_stream16((const float *)samples, slice);
             m_samples.emplace_back(slice);
             m_capacity *= 2;
         }
@@ -497,13 +497,19 @@ public:
     BucketSliced_TBBMalloc_SIMDAligned() { 
         void * ptr = tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size*4*SAMPLE_SIZE);
         if(ptr) {
-            SIMD::align(alignof(double), sizeof(float), ptr, m_slice_size*4*SAMPLE_SIZE);
+            size_t size = m_slice_siz;
+            SIMD::align(alignof(double), sizeof(float), ptr, size);
+            DEBUG_PRINT()
+        } else {
+            DEBUG_PRINT("Can't allocate: %p", ptr);
         }
 
         if(ptr) {
             float * slice = (float*)ptr;
             m_samples.emplace_back(slice);
             m_capacity = m_slice_size;
+        } else {
+            DEBUG_PRINT("Can't allocate: %p", ptr);
         }
         
     }
@@ -515,20 +521,21 @@ public:
             std::ceil(m_current_item / m_slice_size);
             const uint _item = (m_current_item % m_slice_size)*4*SAMPLE_SIZE;
             float * slice = m_samples[slice_pointer];
-            SIMD::simd_copy_stream((const float *)samples, /*4*samples*/ 16, 4, &slice[_item]);
+            SIMD::simd_copy_stream16((const float *)samples, &slice[_item]);
         } else {
             void * ptr = tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size*4*SAMPLE_SIZE);
             if(ptr) {
-                SIMD::align(alignof(double), sizeof(float), ptr, m_slice_size*4*SAMPLE_SIZE);
+                size_t size = m_slice_size*4*SAMPLE_SIZE;
+                SIMD::align(alignof(double), sizeof(float), ptr, size);
             }
             if (ptr) {
                 float * slice = (float*)ptr;
-                SIMD::simd_copy_stream((const float *)samples, /*4*samples*/ 16, 4, slice);
+                SIMD::simd_copy_stream16((const float *)samples, slice);
                 m_samples.emplace_back(slice);
                 m_capacity *= 2;
             }
         }
-        m_current_item += 1;
+        m_current_item += 16;
     }
 
     void clear()      {m_current_item = 0; }
@@ -542,11 +549,10 @@ public:
         m_samples.clear();
     }
 private:
-    const size_t m_simd_size = 4;
-    std::vector<float*>     m_samples;
     size_t m_current_item = 0;
-    size_t m_slice_size   = 512; // number of sample packs (=4*4) in cache_level_1?
-    size_t m_capacity     = 0;
+    std::vector<float*> m_samples;
+    size_t m_capacity = 0;
+    const size_t m_slice_size = 8192; // cache_level_size(float) = 512 * 16floats;
 };
 
 
@@ -700,12 +706,12 @@ int main()
     // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
     // #endif
 
-    #if TESTS SIGN 8
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_StdVec[vec<Sample>,std::alloc.]>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucket_Slices_Std>, 1, REPETITION), QUEUE_SIZE);
-    std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
-    #endif
+    // #if TESTS SIGN 8
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_StdVec[vec<Sample>,std::alloc.]>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucket_Slices_Std>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
 
     //  #if TESTS SIGN 9
     // // Bucket <Sample, tbb:mempool >
@@ -721,12 +727,12 @@ int main()
     // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
     // #endif
 
-     #if TESTS SIGN 11
-    // Bucket <Sample, tbb:mempool >
-    printf("Struct BucketSliced_TBBMalloc_SIMD[float*,tbb:mallo>: %.1fms (buckets in queue: %i ) \n",
-        microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc_SIMD>, 1, REPETITION), QUEUE_SIZE);
-    std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
-    #endif
+    //  #if TESTS SIGN 11
+    // // Bucket <Sample, tbb:mempool >
+    // printf("Struct BucketSliced_TBBMalloc_SIMD[float*,tbb:mallo>: %.1fms (buckets in queue: %i ) \n",
+    //     microbench(&benchmark_runner<allocate_bucketSliced_TBBMalloc_SIMD>, 1, REPETITION), QUEUE_SIZE);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(COOL_ALLOC));
+    // #endif
 
 
    #if TESTS SIGN 12

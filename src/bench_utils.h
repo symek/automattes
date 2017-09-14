@@ -106,7 +106,7 @@ namespace SIMD
         std::memcpy(dest, source, sizeof(float)*step);
     }
 
-    inline void simd_copy(const float * source, const size_t size, const size_t stride, float * dest) 
+    inline void simd_copy16(const float * source, const size_t size, const size_t stride, float * dest) 
     {   
         // I assume stride == 4 for now:
         // 6 floats per sample * 4 samples = 24 floats = (3 * __m256) ||  (6*__m128) stores.
@@ -115,8 +115,6 @@ namespace SIMD
         _mm256_store_ps(dest, *varray);
                  varray = (__m256 *) &source[8];
         _mm256_store_ps(&dest[8], *varray);
-                 // varray = (__m256 *) &source[16];
-        // _mm256_store_ps(&dest[16], *varray);
         #else
             #if defined (__SSE2__) || defined(__SSE3__) || defined(__SSE4__) 
                 __m128 * varray = (__m128 *) source;
@@ -127,26 +125,20 @@ namespace SIMD
                 _mm_store_ps(&dest[8], *varray);
                          varray = (__m128 *) &source[12];
                 _mm_store_ps(&dest[12], *varray);
-                         // varray = (__m128 *) &source[16];
-                // _mm_store_ps(&dest[16], *varray);
-                         // varray = (__m128 *) &source[20];
-                // _mm_store_ps(&dest[20], *varray);
             #else
-                const size_t step = SAMPLE_SIZE*stride;
-                std::memcpy(dest, source, sizeof(float)*step);
+                std::memcpy(dest, source, sizeof(float)*16);
             #endif
         #endif
     }
 
-    inline void simd_copy_stream(const float * source, const size_t size, const size_t stride, float * dest) 
+    inline void simd_copy_stream16(const float * source, float * dest) 
     {
          #ifdef __AVX__ 
         __m256 * varray = (__m256 *) source;
         _mm256_stream_ps(dest, *varray);
                  varray = (__m256 *) &source[8];
         _mm256_stream_ps(&dest[8], *varray);
-                 // varray = (__m256 *) &source[16];
-        // _mm256_stream_ps(&dest[16], *varray);
+  
         #else
             #if defined (__SSE2__) || defined(__SSE3__) || defined(__SSE4__) 
                 __m128 * varray = (__m128 *) source;
@@ -157,13 +149,10 @@ namespace SIMD
                 _mm_stream_ps(&dest[8], *varray);
                          varray = (__m128 *) &source[12];
                 _mm_stream_ps(&dest[12], *varray);
-                         // varray = (__m128 *) &source[16];
-                // _mm_stream_ps(&dest[16], *varray);
-                         // varray = (__m128 *) &source[20];
-                // _mm_stream_ps(&dest[20], *varray);
+          
             #else
                 const size_t step = SAMPLE_SIZE*stride;
-                std::memcpy(dest, source, sizeof(float)*step);
+                std::memcpy(dest, source, sizeof(float)*16);
             #endif
         #endif
     }
