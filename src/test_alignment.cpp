@@ -7,13 +7,17 @@
 #include <x86intrin.h>
 #include <vector>
 #include <memory>
+#include <cstring>
 
 #include "tbb/aligned_space.h"
 #include "tbb/cache_aligned_allocator.h"
 #include "tbb/scalable_allocator.h"
 
+#include "bench_utils.h"
+
 #define TBB_PREVIEW_MEMORY_POOL 1
 #include "tbb/memory_pool.h"
+
 
 namespace BENCHMARK  
 {  
@@ -80,49 +84,58 @@ int main()
 {
     constexpr size_t size = 16;
     static_vector<float, size> p1;
-
-
-    float source[16] __attribute__((aligned(64)));
-    std::cout << "Source alignment: " << intPtr<long>((void*)source) % 64 << '\n';
-    
-    // float dest[size] __attribute__((aligned(64)));
-    // std::vector<float, tbb::cache_aligned_allocator<float>> destv(size);
-    // float *dest = (float*)&destv;
-    // tbb::cache_aligned_allocator<float> allocator;
-    // float *dest = allocator.allocate(8192);
-
-    size_t maxsize = 8192;
-
+    size_t maxsize = size*128;
+    float source[size] __attribute__((aligned(alignof(float))));
+       
     float * dest = nullptr;
-    void  * ptr  = my_pool.malloc(8192);
-    BENCHMARK::align(alignof(int), sizeof(float), ptr, maxsize); 
+    void  * ptr  = my_pool.malloc(maxsize);
+
+    std::cout << "Before: " << ptr << '\n';
+    BENCHMARK::align(alignof(double), sizeof(float), ptr, maxsize); 
     if (ptr) {
+        std::cout << "After : " << ptr << '\n';
         std::cout << "Dest   maxsize: " << maxsize <<  '\n';
         dest = (float*)ptr;
-    }   
+    }  
 
-    const long dest_ptr = intPtr<long>((void*)dest);
-    std::cout << "Dest   alignment: " << dest_ptr % 64 << '\n';
-
-
+    // Init cache line:
     for (int i = 0; i < size; ++i)
-      source[i] = i;
+      source[i] = i*1.10f;
 
    
-    for(int i=0; i<8192; i+=8) {
-        // const int idx = i*8;
-        _mm256_stream_ps(&dest[i],   *(__m256*)source);
-        i+= 8;
-        _mm256_stream_ps(&dest[i], *(__m256*)&source[8]);
+    // for(int i=0; i<maxsize; i+=8) {
+    //     _mm256_stream_ps(&dest[i],   *(__m256*)source);
+    //     i+= 8;
+    //     _mm256_stream_ps(&dest[i], *(__m256*)&source[8]);
+    // }
+
+
+    for(int i=0; i<maxsize; i+=size) {
+        BENCHMARK::SIMD::simd_copy_stream16(source, &dest[i]);
     }
 
-    for (int i = 0; i < 512; ++i)
+
+
+    for (int i = 0; i < 12; ++i)
         std::cout << dest[i] << ", ";
     std::cout << "\n";
 
 
     my_pool.free((void*)ptr);
 
+
+    return 0;
+
+}
+    // const long dest_ptr = intPtr<long>((void*)dest);
+    // std::cout << "Dest   alignment: " << dest_ptr % 64 << '\n';
+    // float dest[size] __attribute__((aligned(64)));
+    // std::vector<float, tbb::cache_aligned_allocator<float>> destv(size);
+    // float *dest = (float*)&destv;
+    // tbb::cache_aligned_allocator<float> allocator;
+    // float *dest = allocator.allocate(8192);
+    // tbb::aligned_space<float, size> space;
+    // float * p4 = space.begin();
     //  long x, y, z1, z2, w;
 
     // x  = intPtr<long>((void*)&p1);
@@ -138,9 +151,3 @@ int main()
     // << "aligned_space: " << w << "\n";
     // // << "diff         : " << z2 - z1 << "\n"\
     // delete[] (float*)p2;
-
-    return 0;
-    // tbb::aligned_space<float, size> space;
-    // float * p4 = space.begin();
-
-}

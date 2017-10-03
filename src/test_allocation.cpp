@@ -495,11 +495,10 @@ void allocate_bucketSliced_TBBMalloc_SIMD()
 struct BucketSliced_TBBMalloc_SIMDAligned {
 public:
     BucketSliced_TBBMalloc_SIMDAligned() { 
-        void * ptr = tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size*4*SAMPLE_SIZE);
+        void * ptr = tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size);
         if(ptr) {
-            size_t size = m_slice_siz;
-            SIMD::align(alignof(double), sizeof(float), ptr, size);
-            DEBUG_PRINT()
+            SIMD::align(alignof(double), sizeof(float), ptr, m_slice_size);
+            // DEBUG_PRINT("Allocated.", 0);
         } else {
             DEBUG_PRINT("Can't allocate: %p", ptr);
         }
@@ -521,7 +520,8 @@ public:
             std::ceil(m_current_item / m_slice_size);
             const uint _item = (m_current_item % m_slice_size)*4*SAMPLE_SIZE;
             float * slice = m_samples[slice_pointer];
-            SIMD::simd_copy_stream16((const float *)samples, &slice[_item]);
+            // SIMD::simd_copy_stream16((const float *)samples, &slice[_item]);
+            // SIMD::std_copy_stream16((const float *)samples, &slice[_item]);
         } else {
             void * ptr = tbb_bucket_mem_pool.malloc(sizeof(float)*m_slice_size*4*SAMPLE_SIZE);
             if(ptr) {
@@ -530,7 +530,8 @@ public:
             }
             if (ptr) {
                 float * slice = (float*)ptr;
-                SIMD::simd_copy_stream16((const float *)samples, slice);
+                // SIMD::simd_copy_stream16((const float *)samples, slice);
+                // SIMD::std_copy_stream16((const float *)samples, slice);
                 m_samples.emplace_back(slice);
                 m_capacity *= 2;
             }

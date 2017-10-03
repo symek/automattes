@@ -106,6 +106,12 @@ namespace SIMD
         std::memcpy(dest, source, sizeof(float)*step);
     }
 
+    inline void std_copy16(const float * source, float * dest)
+    {
+        const size_t step = 16;//SAMPLE_SIZE*stride;
+        std::memcpy(dest, source, sizeof(float)*step);
+    }
+
     inline void simd_copy16(const float * source, const size_t size, const size_t stride, float * dest) 
     {   
         // I assume stride == 4 for now:
